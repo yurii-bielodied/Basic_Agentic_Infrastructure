@@ -1,0 +1,13 @@
+# Terraform state files
+*.tfstate
+*.tfstate.backup
+# Exclude .terraform directory which contains plugins and modules
+.terraform/
+# Kind cluster configuration files
+kind-cluster-config
+# VS Code settings
+.vscode/
+# Helm cache files
+.helmcache/
+# Terraform variables files
+*.tfvars
