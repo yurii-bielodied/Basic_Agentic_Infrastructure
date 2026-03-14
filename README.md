@@ -83,9 +83,9 @@ flowchart TD
 
 Make sure the following tools are installed and available in your `PATH`:
 
-- **Terraform** `>= 1.5`
+- **Terraform** `>= 1.14`
 - **kubectl** compatible with your Kubernetes version
-- **Helm** `>= 3.x`
+- **Helm** `>= 3.1`
 - **Docker** (Docker Engine or Docker Desktop)
 - **Ollama**
 
