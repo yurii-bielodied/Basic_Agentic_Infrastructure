@@ -87,7 +87,6 @@ Make sure the following tools are installed and available in your `PATH`:
 - **kubectl** compatible with your Kubernetes version
 - **Helm** `>= 3.x`
 - **Docker** (Docker Engine or Docker Desktop)
-- **Kind**
 - **Ollama**
 
 ### System Requirements
