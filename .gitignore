@@ -11,3 +11,5 @@ kind-cluster-config
 .helmcache/
 # Terraform variables files
 *.tfvars
+# Terraform lock files
+.terraform.lock.hcl
