@@ -13,3 +13,4 @@ kind-cluster-config
 *.tfvars
 # Terraform lock files
 .terraform.lock.hcl
+.terraform.tfstate.lock.hcl
