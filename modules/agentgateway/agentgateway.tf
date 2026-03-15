@@ -141,25 +141,6 @@ resource "kubectl_manifest" "agentgateway_proxy" {
   })
 }
 
-resource "kubectl_manifest" "kagent_ui_credentials" {
-  depends_on = [helm_release.agentgateway]
-
-  yaml_body = yamlencode({
-    apiVersion = "v1"
-    kind       = "Secret"
-    metadata = {
-      name      = "kagent-ui-htpasswd"
-      namespace = "${var.namespace}"
-    }
-    type = "Opaque"
-    stringData = {
-      # Example credentials (CHANGE IN PRODUCTION!):
-      #   kagent-ui / KagentUI2026!
-      ".htaccess" = "kagent-ui:$2y$05$h8tz.GowC3izTfjfP.BviegzYHbpZ8CS..2Gt9xxuRVWLBeHy8vxq"
-    }
-  })
-}
-
 resource "kubectl_manifest" "kagent_ui_policy" {
   depends_on = [kubectl_manifest.agentgateway_proxy]
 
@@ -182,14 +163,11 @@ resource "kubectl_manifest" "kagent_ui_policy" {
         basicAuthentication = {
           mode  = "Strict"
           realm = "Kagent UI"
-          secretRef = {
-            name = "kagent-ui-htpasswd"
-          }
-          # users = [
-          #   # Example credentials (CHANGE IN PRODUCTION!):
-          #   #   kagent-ui / KagentUI2026!
-          #   "kagent-ui:$apr1$TYiryv0/$d95l2dw3Q0hPzpNgU.XLT0"
-          # ]
+          users = [
+            # Example credentials (CHANGE IN PRODUCTION!):
+            #   kagent-ui / KagentUI2026!
+            "kagent-ui:$apr1$TYiryv0/$d95l2dw3Q0hPzpNgU.XLT0"
+          ]
         }
       }
     }
