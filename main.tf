@@ -10,30 +10,9 @@ resource "null_resource" "install_gatewayapi" {
   }
 }
 
-resource "helm_release" "agentgateway_crds" {
-  depends_on = [null_resource.install_gatewayapi]
-
-  namespace        = "agentgateway-system"
-  name             = "agentgateway-crds"
-  repository       = "oci://ghcr.io/kgateway-dev/charts"
-  chart            = "agentgateway-crds"
-  version          = "v2.2.1"
-  create_namespace = true
-}
-
-resource "helm_release" "agentgateway" {
-  depends_on = [helm_release.agentgateway_crds]
-
-  namespace  = "agentgateway-system"
-  name       = "agentgateway"
-  repository = "oci://ghcr.io/kgateway-dev/charts"
-  chart      = "agentgateway"
-  version    = "v2.2.1"
-}
-
 resource "null_resource" "manage_ollama_model" {
   provisioner "local-exec" {
-    command = "ollama pull qwen3:14b"
+    command = "powershell -Command \"if (-not (ollama list | Select-String 'qwen3:14b')) { ollama pull qwen3:14b }\""
   }
 
   provisioner "local-exec" {
@@ -42,39 +21,20 @@ resource "null_resource" "manage_ollama_model" {
   }
 }
 
-resource "helm_release" "kagent_crds" {
-  depends_on = [helm_release.agentgateway]
+module "agentgateway" {
+  depends_on = [null_resource.install_gatewayapi]
 
-  namespace        = "kagent"
-  name             = "kagent-crds"
-  repository       = "oci://ghcr.io/kagent-dev/kagent/helm"
-  chart            = "kagent-crds"
-  create_namespace = true
+  source    = "./modules/agentgateway"
+  namespace = "agentgateway-system"
 }
 
-resource "helm_release" "kagent" {
-  depends_on = [helm_release.kagent_crds, null_resource.manage_ollama_model]
+module "kagent" {
+  depends_on = [module.agentgateway, null_resource.manage_ollama_model]
 
-  namespace  = "kagent"
-  name       = "kagent"
-  repository = "oci://ghcr.io/kagent-dev/kagent/helm"
-  chart      = "kagent"
-  set = [
-    {
-      name  = "providers.default"
-      value = "ollama"
-    },
-    {
-      name  = "providers.ollama.provider"
-      value = "Ollama"
-    },
-    {
-      name  = "providers.ollama.model"
-      value = "qwen3:14b"
-    },
-    {
-      name  = "providers.ollama.config.host"
-      value = "http://host.docker.internal:11434"
-    },
-  ]
+  source           = "./modules/kagent"
+  namespace        = "kagent"
+  default_provider = "ollama"
+  ollama_provider  = "Ollama"
+  ollama_model     = "qwen3:14b"
+  ollama_host      = "http://host.docker.internal:11434"
 }

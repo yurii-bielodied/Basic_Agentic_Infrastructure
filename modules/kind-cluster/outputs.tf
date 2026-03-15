@@ -2,11 +2,11 @@ output "client_key" {
   value = kind_cluster.kind.client_key
 }
 
-output "ca" {
+output "ca_certificate" {
   value = kind_cluster.kind.cluster_ca_certificate
 }
 
-output "crt" {
+output "client_certificate" {
   value = kind_cluster.kind.client_certificate
 }
 
