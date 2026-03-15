@@ -86,6 +86,8 @@ resource "helm_release" "kagent" {
 }
 
 resource "kubectl_manifest" "allow_gateway_to_kagent" {
+  depends_on = [helm_release.kagent]
+
   yaml_body = yamlencode({
     apiVersion = "gateway.networking.k8s.io/v1beta1"
     kind       = "ReferenceGrant"
