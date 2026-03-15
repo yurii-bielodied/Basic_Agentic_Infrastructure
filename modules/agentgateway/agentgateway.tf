@@ -166,7 +166,7 @@ resource "kubectl_manifest" "kagent_ui_policy" {
           users = [
             # Example credentials (CHANGE IN PRODUCTION!):
             #   kagent-ui / KagentUI2026!
-            "kagent-ui:$apr1$TYiryv0/$d95l2dw3Q0hPzpNgU.XLT0"
+            "kagent-ui:$2y$05$h8tz.GowC3izTfjfP.BviegzYHbpZ8CS..2Gt9xxuRVWLBeHy8vxq"
           ]
         }
       }
