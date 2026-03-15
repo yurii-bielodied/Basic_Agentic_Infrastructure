@@ -85,6 +85,32 @@ resource "helm_release" "kagent" {
   ]
 }
 
+resource "kubectl_manifest" "allow_gateway_to_kagent" {
+  yaml_body = yamlencode({
+    apiVersion = "gateway.networking.k8s.io/v1beta1"
+    kind       = "ReferenceGrant"
+    metadata = {
+      name      = "allow-gateway-to-kagent"
+      namespace = "${var.namespace}"
+    }
+    spec = {
+      from = [
+        {
+          group     = "gateway.networking.k8s.io"
+          kind      = "HTTPRoute"
+          namespace = "agentgateway-system"
+        }
+      ]
+      to = [
+        {
+          group = ""
+          kind  = "Service"
+        }
+      ]
+    }
+  })
+}
+
 # resource "kubernetes_manifest" "kagent_ui_route" {
 #   depends_on = [helm_release.kagent]
 

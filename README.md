@@ -25,17 +25,22 @@ This project provisions and configures:
 - **Kagent** CRDs and application via Helm
 - Kagent configured to use **Ollama** as the default provider
 
-Kagent UI can be accessed locally using:
+Kagent UI can be accessed locally through the AgentGateway proxy:
 
 ```bash
-kubectl port-forward -n kagent svc/kagent-ui 8080:8080
+kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080
 ```
 
-Then open:
+Then open in your browser:
 
 ```text
 http://localhost:8080
 ```
+
+**Note:** The UI is protected with basic authentication.
+
+- Username: `kagent-ui`
+- Password: `KagentUI2026!`
 
 ---
 
@@ -49,15 +54,17 @@ The deployment flow is:
 4. Ollama pulls the `qwen3:14b` model on the host machine.
 5. Kagent CRDs and Kagent are installed with Helm.
 6. Kagent connects to Ollama via `http://host.docker.internal:11434`.
-7. The Kagent UI is exposed locally through `kubectl port-forward`.
+7. The Kagent UI is exposed locally through AgentGateway proxy with basic authentication.
 
 ### Block Diagram
 
 ```mermaid
 flowchart TD
     U[User Browser] -->|http://localhost:8080| PF[kubectl port-forward]
-    PF --> SVC[kagent-ui Service]
-    SVC --> UI[Kagent UI Pod]
+    PF --> AGW[agentgateway-proxy]
+    AGW --> AUTH[Basic Auth Policy]
+    AUTH --> KAGENT_SVC[kagent-ui Service]
+    KAGENT_SVC --> UI[Kagent UI Pod]
     UI --> KAGENT[Kagent Backend]
     KAGENT -->|default provider: ollama| OLLAMA[Ollama API\nhost.docker.internal:11434]
     OLLAMA --> MODEL[qwen3:14b Model]
@@ -65,14 +72,14 @@ flowchart TD
     TF[Terraform] --> KIND[Kind Cluster]
     TF --> GWAPI[Gateway API CRDs]
     TF --> AGCRD[AgentGateway CRDs]
-    TF --> AGW[AgentGateway]
+    TF --> AGW
     TF --> KCRD[Kagent CRDs]
     TF --> KREL[Kagent Helm Release]
     TF --> OLPULL[ollama pull qwen3:14b]
 
     KIND --> AGW
     KIND --> KREL
-    KIND --> SVC
+    KIND --> KAGENT_SVC
 ```
 
 ---
@@ -233,10 +240,10 @@ kubectl get pods -n agentgateway-system
 
 ## Access Kagent UI
 
-Use port-forward to access the UI locally:
+Use port-forward to access the UI through the AgentGateway proxy:
 
 ```bash
-kubectl port-forward -n kagent svc/kagent-ui 8080:8080
+kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080
 ```
 
 Open the UI in your browser:
@@ -244,6 +251,11 @@ Open the UI in your browser:
 ```text
 http://localhost:8080
 ```
+
+You will be prompted for basic authentication:
+
+- **Username:** `kagent-ui`
+- **Password:** `KagentUI2026!` (change in production)
 
 ---
 
@@ -256,7 +268,7 @@ terraform init
 terraform plan
 terraform apply -auto-approve
 kubectl get pods -n kagent
-kubectl port-forward -n kagent svc/kagent-ui 8080:8080
+kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080
 ```
 
 ---
@@ -295,16 +307,17 @@ kubectl logs -n kagent <pod-name>
 
 ### 4. Port-forward fails
 
-Verify the service exists:
+Verify the services exist:
 
 ```bash
-kubectl get svc -n kagent
+kubectl get svc -n agentgateway-system      # Check agentgateway-proxy
+kubectl get svc -n kagent                   # Check kagent-ui
 ```
 
 Then retry:
 
 ```bash
-kubectl port-forward -n kagent svc/kagent-ui 8080:8080
+kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080
 ```
 
 ### 5. Terraform Helm resources fail

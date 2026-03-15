@@ -29,6 +29,24 @@ resource "helm_release" "agentgateway" {
   # }]
 }
 
+resource "kubectl_manifest" "agentgateway_parameters" {
+  depends_on = [helm_release.agentgateway]
+
+  yaml_body = yamlencode({
+    apiVersion = "agentgateway.dev/v1alpha1"
+    kind       = "AgentgatewayParameters"
+    metadata = {
+      name      = "agentgateway-config"
+      namespace = "${var.namespace}"
+    }
+    spec = {
+      logging = {
+        format = "json"
+      }
+    }
+  })
+}
+
 # resource "kubernetes_manifest" "agentgateway_proxy" {
 #   depends_on = [helm_release.agentgateway]
 
@@ -78,7 +96,7 @@ resource "helm_release" "agentgateway" {
 # }
 
 resource "kubectl_manifest" "agentgateway_proxy" {
-  depends_on = [helm_release.agentgateway]
+  depends_on = [helm_release.agentgateway, kubectl_manifest.agentgateway_parameters]
 
   yaml_body = yamlencode({
     apiVersion = "gateway.networking.k8s.io/v1"
@@ -143,7 +161,7 @@ resource "kubectl_manifest" "kagent_ui_credentials" {
 }
 
 resource "kubectl_manifest" "kagent_ui_policy" {
-  depends_on = [kubectl_manifest.agentgateway_proxy, kubectl_manifest.kagent_ui_credentials]
+  depends_on = [kubectl_manifest.agentgateway_proxy]
 
   yaml_body = yamlencode({
     apiVersion = "agentgateway.dev/v1alpha1"
@@ -155,19 +173,23 @@ resource "kubectl_manifest" "kagent_ui_policy" {
     spec = {
       targetRefs = [
         {
-          group       = "gateway.networking.k8s.io"
-          kind        = "Gateway"
-          name        = "agentgateway-proxy"
-          sectionName = "http"
+          group = "gateway.networking.k8s.io"
+          kind  = "Gateway"
+          name  = "agentgateway-proxy"
         }
       ]
       traffic = {
         basicAuthentication = {
           mode  = "Strict"
-          realm = "Kagent UI Gateway"
+          realm = "Kagent UI"
           secretRef = {
             name = "kagent-ui-htpasswd"
           }
+          # users = [
+          #   # Example credentials (CHANGE IN PRODUCTION!):
+          #   #   kagent-ui / KagentUI2026!
+          #   "kagent-ui:$apr1$TYiryv0/$d95l2dw3Q0hPzpNgU.XLT0"
+          # ]
         }
       }
     }
