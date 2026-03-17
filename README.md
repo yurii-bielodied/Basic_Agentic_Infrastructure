@@ -1,6 +1,7 @@
 # Kagent on Kind with Terraform, AgentGateway, and Ollama
 
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-623CE4?logo=terraform&logoColor=white)
+![Flux](https://img.shields.io/badge/Flux-GitOps-CE3262?logo=fluxcd&logoColor=white)
 ![Helm](https://img.shields.io/badge/Helm-Kubernetes%20Packages-0F1689?logo=helm&logoColor=white)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Kind%20Cluster-326CE5?logo=kubernetes&logoColor=white)
 ![Kind](https://img.shields.io/badge/Kind-Local%20K8s-009688)
