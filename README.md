@@ -20,10 +20,18 @@ This project provisions and configures:
 
 - a local **Kind** Kubernetes cluster
 - **Gateway API** experimental CRDs
-- **AgentGateway** CRDs and controller via Helm
+- **Flux CD** for infrastructure as code GitOps
+- **AgentGateway** CRDs and controller (managed via Flux)
 - local **Ollama** model pull for `qwen3:14b`
-- **Kagent** CRDs and application via Helm
+- **Kagent** CRDs and application (managed via Flux)
 - Kagent configured to use **Ollama** as the default provider
+
+The infrastructure is managed using **Flux** GitOps approach:
+
+- Terraform handles Kind cluster provisioning, Gateway API, Ollama, and Flux setup
+- Flux manifests in `infra/` directory manage AgentGateway and Kagent deployments
+
+### Access Kagent UI
 
 Kagent UI can be accessed locally through the AgentGateway proxy:
 
@@ -42,6 +50,20 @@ http://localhost:8080
 - Username: `kagent-ui`
 - Password: `KagentUI2026!`
 
+### Access Flux Status UI
+
+To view Flux automation status and reconciliation details:
+
+```bash
+kubectl port-forward -n flux-system svc/flux-operator 9080:9080
+```
+
+Then open in your browser:
+
+```text
+http://localhost:9080
+```
+
 ---
 
 ## Architecture
@@ -49,10 +71,12 @@ http://localhost:8080
 The deployment flow is:
 
 1. Terraform creates the local Kind cluster.
-2. Gateway API CRDs are installed.
-3. AgentGateway CRDs and AgentGateway are installed with Helm.
-4. Ollama pulls the `qwen3:14b` model on the host machine.
-5. Kagent CRDs and Kagent are installed with Helm.
+2. Terraform installs Flux CD and flux-operator.
+3. Gateway API CRDs are installed via Terraform.
+4. Flux reconciles manifests from `infra/` directory which includes:
+   - AgentGateway CRDs and AgentGateway installation
+   - Kagent CRDs and Kagent installation
+5. Ollama pulls the `qwen3:14b` model on the host machine via Terraform provisioner.
 6. Kagent connects to Ollama via `http://host.docker.internal:11434`.
 7. The Kagent UI is exposed locally through AgentGateway proxy with basic authentication.
 
@@ -60,8 +84,8 @@ The deployment flow is:
 
 ```mermaid
 flowchart TD
-    U[User Browser] -->|http://localhost:8080| PF[kubectl port-forward]
-    PF --> AGW[agentgateway-proxy]
+    U[User Browser] -->|http://localhost:8080| PF1[kubectl port-forward]
+    PF1 --> AGW[agentgateway-proxy]
     AGW --> AUTH[Basic Auth Policy]
     AUTH --> KAGENT_SVC[kagent-ui Service]
     KAGENT_SVC --> UI[Kagent UI Pod]
@@ -69,16 +93,23 @@ flowchart TD
     KAGENT -->|default provider: ollama| OLLAMA[Ollama API\nhost.docker.internal:11434]
     OLLAMA --> MODEL[qwen3:14b Model]
 
+    U2[Developer] -->|http://localhost:9080| PF2[kubectl port-forward]
+    PF2 --> FLUX[flux-operator UI]
+    FLUX --> FLUX_STATUS[Flux Status & Automation]
+
     TF[Terraform] --> KIND[Kind Cluster]
     TF --> GWAPI[Gateway API CRDs]
-    TF --> AGCRD[AgentGateway CRDs]
-    TF --> AGW
-    TF --> KCRD[Kagent CRDs]
-    TF --> KREL[Kagent Helm Release]
+    TF --> FLUX_DEPLOY[Flux CD Setup]
     TF --> OLPULL[ollama pull qwen3:14b]
 
+    KIND --> FLUX_DEPLOY
+    FLUX_DEPLOY --> GitOps[GitOps Reconciliation]
+    GitOps --> AGCRD[AgentGateway CRDs]
+    GitOps --> AGW
+    GitOps --> KCRD[Kagent CRDs]
+    GitOps --> KAGENT_DEPLOY[Kagent Helm Release]
     KIND --> AGW
-    KIND --> KREL
+    KIND --> KAGENT_DEPLOY
     KIND --> KAGENT_SVC
 ```
 
@@ -134,20 +165,41 @@ The provided Terraform configuration includes:
 
 - `module "kind_cluster"` – creates the local Kind cluster
 - `null_resource.install_gatewayapi` – installs Gateway API CRDs from the official release manifest
-- `helm_release.agentgateway_crds` – installs AgentGateway CRDs
-- `helm_release.agentgateway` – installs AgentGateway
+- `module "flux"` – installs Flux CD and sets up GitOps from this repository
 - `null_resource.manage_ollama_model` – pulls the `qwen3:14b` model locally with Ollama
-- `helm_release.kagent_crds` – installs Kagent CRDs
-- `helm_release.kagent` – installs Kagent and configures it to use Ollama
 
-Kagent provider-related values:
+### Flux-Managed Components
 
-```hcl
-providers.default = "ollama"
-providers.ollama.provider = "Ollama"
-providers.ollama.model = "qwen3:14b"
-providers.ollama.config.host = "http://host.docker.internal:11434"
-```
+The `infra/` directory contains Flux manifests that define:
+
+#### `infra/crds/`
+
+- **agentgateway-crds.yaml** – AgentGateway CRD definitions
+- **kagent-crds.yaml** – Kagent CRD definitions
+
+#### `infra/manifests/`
+
+- **agentgateway.yaml** – AgentGateway installation and configuration:
+  - `AgentgatewayParameters` – logging configuration
+  - `Gateway` (agentgateway-proxy) – HTTP listener on port 8080
+  - `AgentgatewayPolicy` – basic authentication for Kagent UI
+
+- **kagent.yaml** – Kagent installation and configuration:
+  - Kagent CRD installation
+  - Kagent UI and controller deployment
+  - HTTPRoute – routes requests to Kagent services
+  - Provider configuration for Ollama:
+    ```yaml
+    providers:
+      default: ollama
+      ollama:
+        provider: "Ollama"
+        model: "qwen3:14b"
+        config:
+          host: "http://host.docker.internal:11434"
+    ```
+
+The Flux system automatically reconciles these manifests from the Git repository, providing continuous deployment and declarative infrastructure management.
 
 ---
 
@@ -202,10 +254,13 @@ terraform apply
 Terraform will:
 
 - create the Kind cluster
-- install Gateway API
-- install AgentGateway
+- install Gateway API and Flux CD
 - pull the Ollama model `qwen3:14b`
-- install Kagent
+- Flux will then automatically reconcile and install:
+  - AgentGateway
+  - Kagent
+
+The entire setup is now managed through GitOps with Flux. Check [Verify the Deployment](#verify-the-deployment) section to confirm all components are running.
 
 ---
 
@@ -223,39 +278,39 @@ Check namespaces:
 kubectl get ns
 ```
 
+Check Flux system and reconciliation status:
+
+```bash
+kubectl get ns flux-system
+kubectl get pods -n flux-system
+kubectl get helmrelease -A  # View all Helm releases managed by Flux
+kubectl get ocirepo -n flux-system  # View OCI repositories
+```
+
 Check Kagent resources:
 
 ```bash
 kubectl get pods -n kagent
 kubectl get svc -n kagent
+kubectl get helmrelease -n kagent
 ```
 
 Check AgentGateway resources:
 
 ```bash
 kubectl get pods -n agentgateway-system
+kubectl get svc -n agentgateway-system
+kubectl get gateway -n agentgateway-system
+kubectl get httproad -n kagent
 ```
 
----
-
-## Access Kagent UI
-
-Use port-forward to access the UI through the AgentGateway proxy:
+Verify Flux reconciliation with events:
 
 ```bash
-kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080
+kubectl describe helmrelease agentgateway -n agentgateway-system
+kubectl describe helmrelease kagent -n kagent
+kubectl logs -n flux-system deployment/flux-operator  # Check Flux operator logs
 ```
-
-Open the UI in your browser:
-
-```text
-http://localhost:8080
-```
-
-You will be prompted for basic authentication:
-
-- **Username:** `kagent-ui`
-- **Password:** `KagentUI2026!` (change in production)
 
 ---
 
@@ -264,18 +319,50 @@ You will be prompted for basic authentication:
 A typical local workflow:
 
 ```bash
+# Initialize and deploy
 terraform init
 terraform plan
 terraform apply -auto-approve
-kubectl get pods -n kagent
+
+# Verify Flux is reconciling
+kubectl get pods -n flux-system
+kubectl get helmrelease -A
+
+# Access Kagent UI (in one terminal)
 kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080
+# Then open http://localhost:8080
+
+# Monitor Flux Status UI (optional, in another terminal)
+kubectl port-forward -n flux-system svc/flux-operator 9080:9080
+# Then open http://localhost:9080
 ```
+
+Credentials for Kagent UI:
+
+- **Username:** `kagent-ui`
+- **Password:** `KagentUI2026!`
 
 ---
 
 ## Troubleshooting
 
-### 1. Ollama is not reachable from Kagent
+### 1. Flux reconciliation failed
+
+Check Flux operator logs and HelmRelease status:
+
+```bash
+kubectl logs -n flux-system deployment/flux-operator -f
+kubectl describe helmrelease agentgateway -n agentgateway-system
+kubectl describe helmrelease kagent -n kagent
+```
+
+If manifests are not being applied, check GitRepository:
+
+```bash
+kubectl describe gitrepository infra -n flux-system
+```
+
+### 2. Ollama is not reachable from Kagent
 
 Check that Ollama is running on the host:
 
@@ -285,7 +372,7 @@ curl http://localhost:11434/api/tags
 
 If Kagent cannot reach `host.docker.internal`, verify your Docker/Kind networking setup.
 
-### 2. Model pull takes a long time
+### 3. Model pull takes a long time
 
 `qwen3:14b` is a large model. Initial download can take significant time depending on bandwidth and disk performance.
 
@@ -295,7 +382,7 @@ Check downloaded models:
 ollama list
 ```
 
-### 3. Pods are not starting
+### 4. Pods are not starting
 
 Inspect pods and events:
 
@@ -303,15 +390,18 @@ Inspect pods and events:
 kubectl get pods -A
 kubectl describe pod -n kagent <pod-name>
 kubectl logs -n kagent <pod-name>
+kubectl describe pod -n agentgateway-system <pod-name>
+kubectl logs -n agentgateway-system <pod-name>
 ```
 
-### 4. Port-forward fails
+### 5. Port-forward fails
 
 Verify the services exist:
 
 ```bash
 kubectl get svc -n agentgateway-system      # Check agentgateway-proxy
 kubectl get svc -n kagent                   # Check kagent-ui
+kubectl get svc -n flux-system              # Check flux-operator
 ```
 
 Then retry:
@@ -320,18 +410,19 @@ Then retry:
 kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080
 ```
 
-### 5. Terraform Helm resources fail
+### 6. AgentGateway Policy not being applied
 
-Make sure:
-
-- the Kind cluster is up
-- your local kubeconfig points to the Kind cluster
-- Helm can access the cluster
-
-Check current context:
+Check if the policy is targeting the correct Gateway:
 
 ```bash
-kubectl config current-context
+kubectl get agentgatewaypolicy -n agentgateway-system
+kubectl describe agentgatewaypolicy kagent-ui-basic-auth -n agentgateway-system
+```
+
+Verify the Gateway name matches the policy targetRef:
+
+```bash
+kubectl get gateway -n agentgateway-system
 ```
 
 ---
@@ -344,11 +435,12 @@ To destroy the environment:
 terraform destroy
 ```
 
-Note: the destroy provisioner stops the Ollama model process:
+This will:
 
-```bash
-ollama stop qwen3:14b
-```
+- Destroy the Kind cluster (which removes all Kubernetes resources including Flux-managed applications)
+- Trigger the Ollama stop provisioner
+
+**Note:** Flux manifests are automatically cleaned up when the Kind cluster is destroyed, but the Git repository continues to contain the infrastructure definitions.
 
 ---
 
@@ -356,6 +448,8 @@ ollama stop qwen3:14b
 
 - This setup is intended primarily for **local development and testing**.
 - Running large local LLMs can consume substantial CPU, memory, disk, and GPU resources.
+- Infrastructure is managed through **Flux CD** for declarative GitOps workflow.
+- All application deployments (AgentGateway, Kagent) are defined in the `infra/` directory and automatically reconciled by Flux.
 - For production-style environments, consider replacing the local Kind + host Ollama pattern with a more robust Kubernetes-based inference backend.
 
 ---
@@ -365,10 +459,11 @@ ollama stop qwen3:14b
 This repository demonstrates how to combine:
 
 - **Terraform** for repeatable infrastructure provisioning
+- **Flux CD** for GitOps continuous deployment
 - **Kind** for local Kubernetes
-- **Helm** for application installation
+- **Helm** for application installation (via Flux)
 - **Ollama** for local LLM serving
 - **Kagent** for agent interaction UI
 - **AgentGateway** for gateway-layer capabilities
 
-into one reproducible local AI platform.
+into one reproducible local AI platform with declarative infrastructure management.
