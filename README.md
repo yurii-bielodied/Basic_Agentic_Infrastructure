@@ -1,4 +1,4 @@
-# Kagent on Kind with Terraform, AgentGateway, and Ollama
+# Kagent on Kind with Terraform, Flux, AgentGateway, and Ollama
 
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-623CE4?logo=terraform&logoColor=white)
 ![Flux](https://img.shields.io/badge/Flux-GitOps-CE3262?logo=fluxcd&logoColor=white)
@@ -9,7 +9,7 @@
 ![Kagent](https://img.shields.io/badge/Kagent-AI%20Agent%20UI-FF6B35)
 ![AgentGateway](https://img.shields.io/badge/AgentGateway-Gateway%20Layer-2E8B57)
 
-A local Kubernetes-based AI agent playground deployed with **Terraform** on a **Kind** cluster. The stack installs **Gateway API**, **AgentGateway**, **Kagent**, and connects Kagent to a locally running **Ollama** model (`qwen3:14b`).
+A local Kubernetes-based AI agent playground deployed with **Terraform** and **Flux CD** on a **Kind** cluster. The stack installs **Gateway API**, **AgentGateway**, **Kagent**, and connects Kagent to a locally running **Ollama** model (`qwen3:14b`). All application deployments are managed through **Flux** GitOps for declarative infrastructure as code.
 
 This setup is useful for local development, demos, experimentation, and validating the deployment flow before moving to a larger Kubernetes environment.
 
