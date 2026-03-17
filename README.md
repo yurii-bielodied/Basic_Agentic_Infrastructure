@@ -32,6 +32,26 @@ The infrastructure is managed using **Flux** GitOps approach:
 - Terraform handles Kind cluster provisioning, Gateway API, Ollama, and Flux setup
 - Flux manifests in `infra/` directory manage AgentGateway and Kagent deployments
 
+### Available User Interfaces
+
+1. **Kagent UI** (port 8080) - AI agent interaction interface
+   - Access: `kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080`
+   - URL: http://localhost:8080
+
+![Kagent UI](img/kagent_ui.jpg)
+
+2. **AgentGateway Admin UI** (port 15000) - Debug and inspect proxy configuration
+   - Access: `kubectl port-forward deploy/agentgateway-proxy -n agentgateway-system 15000:15000`
+   - URL: http://localhost:15000/ui/
+
+![AgentGateway Admin UI](img/agentgateway_ui.jpg)
+
+3. **Flux Status UI** (port 9080) - Monitor GitOps reconciliation
+   - Access: `kubectl port-forward -n flux-system svc/flux-operator 9080:9080`
+   - URL: http://localhost:9080
+
+![Flux Status UI](img/flux_ui.jpg)
+
 ### Access Kagent UI
 
 Kagent UI can be accessed locally through the AgentGateway proxy:
@@ -50,6 +70,26 @@ http://localhost:8080
 
 - Username: `kagent-ui`
 - Password: `KagentUI2026!`
+
+### Access AgentGateway Admin UI
+
+AgentGateway provides a built-in Admin UI for debugging and inspecting proxy configuration:
+
+```bash
+kubectl port-forward deploy/agentgateway-proxy -n agentgateway-system 15000
+```
+
+Then open in your browser:
+
+```text
+http://localhost:15000/ui/
+```
+
+**Features:**
+
+- View configured listeners and port bindings
+- Inspect proxy configuration (read-only in Kubernetes mode)
+- Test MCP tool calls through the built-in playground
 
 ### Access Flux Status UI
 
@@ -336,6 +376,10 @@ kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080
 # Monitor Flux Status UI (optional, in another terminal)
 kubectl port-forward -n flux-system svc/flux-operator 9080:9080
 # Then open http://localhost:9080
+
+# Debug AgentGateway configuration (optional, in another terminal)
+kubectl port-forward deploy/agentgateway-proxy -n agentgateway-system 15000
+# Then open http://localhost:15000/ui/
 ```
 
 Credentials for Kagent UI:
@@ -424,6 +468,21 @@ Verify the Gateway name matches the policy targetRef:
 
 ```bash
 kubectl get gateway -n agentgateway-system
+```
+
+### 7. Cannot access AgentGateway Admin UI
+
+The Admin UI is not exposed as a Service. For access, verify the deployment exists and port-forward is correct:
+
+```bash
+# Verify agentgateway-proxy deployment exists
+kubectl get deploy -n agentgateway-system
+
+# Use deployment name in port-forward
+kubectl port-forward deploy/agentgateway-proxy -n agentgateway-system 15000:15000
+
+# Check deployment logs if there are issues
+kubectl logs deploy/agentgateway-proxy -n agentgateway-system -f
 ```
 
 ---
