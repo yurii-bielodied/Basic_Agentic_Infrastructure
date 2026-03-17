@@ -21,20 +21,28 @@ resource "null_resource" "manage_ollama_model" {
   }
 }
 
-module "agentgateway" {
-  depends_on = [null_resource.install_gatewayapi]
+module "flux" {
+  depends_on = [null_resource.install_gatewayapi, null_resource.manage_ollama_model]
 
-  source    = "./modules/agentgateway"
-  namespace = "agentgateway-system"
+  source          = "./modules/flux"
+  namespace       = "flux-system"
+  github_repo_url = var.github_repo_url
 }
 
-module "kagent" {
-  depends_on = [module.agentgateway, null_resource.manage_ollama_model]
+# module "agentgateway" {
+#   depends_on = [null_resource.install_gatewayapi]
 
-  source           = "./modules/kagent"
-  namespace        = "kagent"
-  default_provider = "ollama"
-  ollama_provider  = "Ollama"
-  ollama_model     = "qwen3:14b"
-  ollama_host      = "http://host.docker.internal:11434"
-}
+#   source    = "./modules/agentgateway"
+#   namespace = "agentgateway-system"
+# }
+
+# module "kagent" {
+#   depends_on = [module.agentgateway, null_resource.manage_ollama_model]
+
+#   source           = "./modules/kagent"
+#   namespace        = "kagent"
+#   default_provider = "ollama"
+#   ollama_provider  = "Ollama"
+#   ollama_model     = "qwen3:14b"
+#   ollama_host      = "http://host.docker.internal:11434"
+# }

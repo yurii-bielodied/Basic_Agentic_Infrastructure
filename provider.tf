@@ -2,6 +2,8 @@ provider "kubernetes" {
   config_path = "${path.root}/kind-cluster-config"
 }
 
+provider "kind" {}
+
 provider "helm" {
   kubernetes = {
     config_path = "${path.root}/kind-cluster-config"
