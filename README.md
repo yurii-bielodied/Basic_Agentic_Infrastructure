@@ -1,4 +1,4 @@
-# Kagent AI Agent Platform on Kind with Terraform, Flux, AgentGateway, and Ollama
+# Kagent AI Agent Platform on Kind with Terraform, Flux, AgentGateway and Ollama
 
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-623CE4?logo=terraform&logoColor=white)
 ![Flux](https://img.shields.io/badge/Flux-GitOps-CE3262?logo=fluxcd&logoColor=white)
