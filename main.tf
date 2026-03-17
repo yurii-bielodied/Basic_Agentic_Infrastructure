@@ -2,13 +2,13 @@ module "kind_cluster" {
   source = "./modules/kind-cluster"
 }
 
-# resource "null_resource" "install_gatewayapi" {
-#   depends_on = [module.kind_cluster]
+resource "null_resource" "install_gatewayapi" {
+  depends_on = [module.kind_cluster]
 
-#   provisioner "local-exec" {
-#     command = "kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/experimental-install.yaml"
-#   }
-# }
+  provisioner "local-exec" {
+    command = "kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/experimental-install.yaml"
+  }
+}
 
 resource "null_resource" "manage_ollama_model" {
   provisioner "local-exec" {
@@ -22,8 +22,8 @@ resource "null_resource" "manage_ollama_model" {
 }
 
 module "flux" {
-  # depends_on = [null_resource.install_gatewayapi, null_resource.manage_ollama_model]
-  depends_on = [null_resource.manage_ollama_model]
+  depends_on = [null_resource.install_gatewayapi, null_resource.manage_ollama_model]
+  # depends_on = [null_resource.manage_ollama_model]
 
   source          = "./modules/flux"
   namespace       = "flux-system"
