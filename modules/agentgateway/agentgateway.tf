@@ -11,7 +11,7 @@ resource "helm_release" "agentgateway_crds" {
   name             = "agentgateway-crds"
   repository       = "oci://ghcr.io/kgateway-dev/charts"
   chart            = "agentgateway-crds"
-  version          = "v2.2.1"
+  version          = "v2.2.2"
   create_namespace = true
 }
 
@@ -22,7 +22,7 @@ resource "helm_release" "agentgateway" {
   name       = "agentgateway"
   repository = "oci://ghcr.io/kgateway-dev/charts"
   chart      = "agentgateway"
-  version    = "v2.2.1"
+  version    = "v2.2.2"
   # set = [{
   #   name  = ""
   #   value = ""

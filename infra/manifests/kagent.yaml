@@ -65,9 +65,15 @@ spec:
       istio-manager-agent:
         enabled: false
     providers:
-      default: openAI
-      openAI:
-        apiKey: OPENAI_API_KEY
+      # default: openAI
+      # openAI:
+      #   apiKey: OPENAI_API_KEY
+      default: ollama
+      ollama:
+        provider: "Ollama"
+        model: "qwen3:14b"
+        config:
+          host: "http://host.docker.internal:11434"
 ---
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: ReferenceGrant
