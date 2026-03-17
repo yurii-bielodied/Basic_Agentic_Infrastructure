@@ -52,17 +52,23 @@ spec:
       querydoc:
         enabled: false
     agents:
-      cilium-policy-agent:
-        enabled: false
-      cilium-manager-agent:
+      argo-rollouts-agent:
         enabled: false
       cilium-debug-agent:
         enabled: false
+      cilium-manager-agent:
+        enabled: false
+      cilium-policy-agent:
+        enabled: false
+      helm-agent:
+        enabled: false
       istio-agent:
         enabled: false
-      istio-policy-agent:
+      kgateway-agent:
         enabled: false
-      istio-manager-agent:
+      observability-agent:
+        enabled: false
+      promql-agent:
         enabled: false
     providers:
       # default: openAI

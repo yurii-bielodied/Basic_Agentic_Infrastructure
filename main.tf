@@ -23,7 +23,6 @@ resource "null_resource" "manage_ollama_model" {
 
 module "flux" {
   depends_on = [null_resource.install_gatewayapi, null_resource.manage_ollama_model]
-  # depends_on = [null_resource.manage_ollama_model]
 
   source          = "./modules/flux"
   namespace       = "flux-system"
