@@ -40,6 +40,9 @@ spec:
     ingress:
       enabled: false
 
+    service:
+      type: ClusterIP
+
     postgresql:
       enabled: true
 
@@ -48,7 +51,16 @@ spec:
 
     auth:
       enableAuth: true
-      defaultAdminPassword: "Phoenix2026!"
+      defaultAdminPassword: "Phoenix2026!" # Will request change on first login
+      useSecureCookies: false
+
+    healthChecks:
+      startupProbe:
+        enabled: true
+        initialDelaySeconds: 5
+        periodSeconds: 2
+        failureThreshold: 90
+        timeoutSeconds: 1
 
     logging:
       level: info
