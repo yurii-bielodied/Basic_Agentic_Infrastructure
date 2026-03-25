@@ -1,4 +1,4 @@
-# Kagent AI Agent Platform on Kind with Terraform, Flux, AgentGateway, Phoenix, Qdrant and Ollama
+# Kagent AI Agent Platform on Kind with Terraform, Flux, AgentGateway, Phoenix, Qdrant, MCP Governance and Ollama
 
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-623CE4?logo=terraform&logoColor=white)
 ![Flux](https://img.shields.io/badge/Flux-GitOps-CE3262?logo=fluxcd&logoColor=white)
@@ -10,8 +10,9 @@
 ![Ollama](https://img.shields.io/badge/Ollama-Local%20LLM-111111)
 ![Kagent](https://img.shields.io/badge/Kagent-AI%20Agent%20UI-FF6B35)
 ![AgentGateway](https://img.shields.io/badge/AgentGateway-Gateway%20Layer-2E8B57)
+![MCP-Governance](https://img.shields.io/badge/MCP%20Governance-Control%20Panel-9932CC)
 
-A complete local Kubernetes-based AI agent platform deployed with **Terraform** and **Flux CD** on a **Kind** cluster. The stack includes **Kagent** for agent interactions, **Phoenix** for distributed tracing and observability, **Qdrant** for vector storage and semantic search, and **Ollama** for local LLM inference. All components are deployed using **Flux** GitOps for fully declarative infrastructure as code.
+A complete local Kubernetes-based AI agent platform deployed with **Terraform** and **Flux CD** on a **Kind** cluster. The stack includes **Kagent** for agent interactions, **Phoenix** for distributed tracing and observability, **Qdrant** for vector storage and semantic search, **MCP Governance** for governance control, and **Ollama** for local LLM inference. All components are deployed using **Flux** GitOps for fully declarative infrastructure as code.
 
 This setup is useful for local development, demos, experimentation and validating the deployment flow before moving to a larger Kubernetes environment.
 
@@ -28,13 +29,14 @@ This project provisions and configures:
 - **Kagent** CRDs and application (managed via Flux)
 - **Phoenix** for distributed tracing and observability (managed via Flux)
 - **Qdrant** vector database for semantic search and RAG (managed via Flux)
+- **MCP Governance** for governance and MCP control (managed via Flux)
 - local **Ollama** model pull for `qwen3:14b`
 - Kagent configured to use **Ollama** as the default LLM provider
 
 The infrastructure is managed using **Flux** GitOps approach:
 
 - Terraform handles Kind cluster provisioning, Gateway API, Ollama and Flux setup
-- Flux manifests in `infra/` directory manage AgentGateway, Kagent, Phoenix and Qdrant deployments
+- Flux manifests in `infra/` directory manage AgentGateway, Kagent, Phoenix, Qdrant and MCP Governance deployments
 
 ### Available User Interfaces
 
@@ -65,7 +67,13 @@ The infrastructure is managed using **Flux** GitOps approach:
 
 ![Qdrant Dashboard](img/qdrant_ui.jpg)
 
-5. **Flux Status UI** (port 9080) - Monitor GitOps reconciliation
+5. **MCP Governance Dashboard** (port 3000) - Governance and MCP control panel
+   - Access: `kubectl port-forward -n mcp-governance svc/mcp-governance-dashboard 3000:3000`
+   - URL: http://localhost:3000
+
+![MCP Governance Dashboard](img/mcp_governance_ui.jpg)
+
+6. **Flux Status UI** (port 9080) - Monitor GitOps reconciliation
    - Access: `kubectl port-forward -n flux-system svc/flux-operator 9080:9080`
    - URL: http://localhost:9080
 
@@ -183,6 +191,26 @@ http://localhost:6333
 
 Qdrant REST API docs are available at: `http://localhost:6333/api/docs`
 
+### Access MCP Governance Dashboard
+
+MCP Governance provides governance and control management for Model Context Protocol:
+
+```bash
+kubectl port-forward -n mcp-governance svc/mcp-governance-dashboard 3000:3000
+```
+
+Then open in your browser:
+
+```text
+http://localhost:3000
+```
+
+**Features:**
+
+- Governance policy management
+- MCP control and configuration
+- Resource monitoring and planning
+
 ## Architecture
 
 The deployment flow is:
@@ -195,11 +223,13 @@ The deployment flow is:
    - Kagent CRDs and Kagent installation
    - Phoenix for distributed tracing and observability
    - Qdrant for vector storage and semantic search
+   - MCP Governance for governance and MCP control
 5. Ollama pulls the `qwen3:14b` model on the host machine via Terraform provisioner.
 6. Kagent connects to Ollama via `http://host.docker.internal:11434`.
 7. The Kagent UI is exposed locally through AgentGateway proxy with basic authentication.
 8. Phoenix tracks distributed traces from all agent interactions.
 9. Qdrant provides vector database backend for semantic search and RAG capabilities.
+10. MCP Governance manages governance policies and MCP control across the platform.
 
 ### Block Diagram
 
@@ -469,6 +499,14 @@ kubectl get svc -n qdrant
 kubectl get helmrelease -n qdrant
 ```
 
+Check MCP Governance resources:
+
+```bash
+kubectl get pods -n mcp-governance
+kubectl get svc -n mcp-governance
+kubectl get helmrelease -n mcp-governance
+```
+
 Verify Flux reconciliation with events:
 
 ```bash
@@ -476,6 +514,7 @@ kubectl describe helmrelease agentgateway -n agentgateway-system
 kubectl describe helmrelease kagent -n kagent
 kubectl describe helmrelease phoenix -n phoenix
 kubectl describe helmrelease qdrant -n qdrant
+kubectl describe helmrelease mcp-governance -n mcp-governance
 kubectl logs -n flux-system deployment/flux-operator  # Check Flux operator logs
 ```
 
@@ -506,6 +545,10 @@ kubectl port-forward -n phoenix svc/phoenix-svc 6006:6006
 # Access Qdrant Vector Database (in another terminal)
 kubectl port-forward -n qdrant svc/qdrant 6333:6333
 # Then open http://localhost:6333/dashboard
+
+# Access MCP Governance Dashboard (in another terminal)
+kubectl port-forward -n mcp-governance svc/mcp-governance-dashboard 3000:3000
+# Then open http://localhost:3000
 
 # Monitor Flux Status UI (optional, in another terminal)
 kubectl port-forward -n flux-system svc/flux-operator 9080:9080
