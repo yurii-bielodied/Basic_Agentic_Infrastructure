@@ -754,6 +754,59 @@ Then access:
 - Phoenix: `http://localhost:6006`
 - Qdrant: `http://localhost:6333/dashboard`
 
+### 11. Testing and Inspecting MCP Servers
+
+To inspect and debug a running MCP server (e.g., flux-operator-mcp or any custom MCP implementation):
+
+```bash
+npx @modelcontextprotocol/inspector node build/index.js
+```
+
+This command launches the **MCP Inspector** tool, which provides an interactive interface to:
+
+- View the server's capabilities and available tools
+- Inspect resources and prompts
+- Test tool invocations with live payloads
+- Debug the server communication protocol
+- Validate MCP server functionality
+
+**Usage in this project:**
+
+1. If testing a locally built MCP server, build the project:
+
+   ```bash
+   npm run build
+   ```
+
+2. Launch the inspector:
+
+   ```bash
+   npx @modelcontextprotocol/inspector node build/index.js
+   ```
+
+3. The inspector UI will open in your browser (`http://localhost:6274`)
+
+4. Use the inspector to:
+   - Call MCP tools and see responses
+   - Test server initialization and configuration
+   - Validate integration with clients (Kagent, etc.)
+
+**For RemoteMCPServer Integration:**
+
+When testing integration with Kagent or other clients:
+
+```bash
+# 1. Run the MCP server with inspector
+npx @modelcontextprotocol/inspector node build/index.js
+
+# 2. Verify Kagent can reach the server
+kubectl get remotemcpserver -n kagent
+kubectl describe remotemcpserver <name> -n kagent
+
+# 3. Check server connectivity
+curl http://localhost:<mcp_server_port>
+```
+
 ---
 
 ## Cleanup
