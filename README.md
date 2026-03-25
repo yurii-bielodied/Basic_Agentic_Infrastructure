@@ -1,4 +1,4 @@
-# Kagent AI Agent Platform on Kind with Terraform, Flux, AgentGateway, Phoenix, Qdrant, MCP Governance and Ollama
+# Kagent AI Agent Platform on Kind with Terraform, Flux, AgentGateway, Phoenix, Qdrant, MCP Governance, Flux Operator MCP and Ollama
 
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-623CE4?logo=terraform&logoColor=white)
 ![Flux](https://img.shields.io/badge/Flux-GitOps-CE3262?logo=fluxcd&logoColor=white)
@@ -11,8 +11,9 @@
 ![Kagent](https://img.shields.io/badge/Kagent-AI%20Agent%20UI-FF6B35)
 ![AgentGateway](https://img.shields.io/badge/AgentGateway-Gateway%20Layer-2E8B57)
 ![MCP-Governance](https://img.shields.io/badge/MCP%20Governance-Control%20Panel-9932CC)
+![Flux-Operator-MCP](https://img.shields.io/badge/Flux%20Operator%20MCP-GitOps%20Automation-FF69B4)
 
-A complete local Kubernetes-based AI agent platform deployed with **Terraform** and **Flux CD** on a **Kind** cluster. The stack includes **Kagent** for agent interactions, **Phoenix** for distributed tracing and observability, **Qdrant** for vector storage and semantic search, **MCP Governance** for governance control, and **Ollama** for local LLM inference. All components are deployed using **Flux** GitOps for fully declarative infrastructure as code.
+A complete local Kubernetes-based AI agent platform deployed with **Terraform** and **Flux CD** on a **Kind** cluster. The stack includes **Kagent** for agent interactions, **Phoenix** for distributed tracing and observability, **Qdrant** for vector storage and semantic search, **MCP Governance** for governance control, **Flux Operator MCP** for AI-driven GitOps automation, and **Ollama** for local LLM inference. All components are deployed using **Flux** GitOps for fully declarative infrastructure as code.
 
 This setup is useful for local development, demos, experimentation and validating the deployment flow before moving to a larger Kubernetes environment.
 
