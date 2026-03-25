@@ -6,3 +6,4 @@ resources:
 - kagent.yaml
 - phoenix.yaml
 - qdrant.yaml
+- mcp-governance.yaml
