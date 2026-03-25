@@ -9,7 +9,7 @@ metadata:
   name: kagent
   namespace: flux-system
 spec:
-  interval: 1h
+  interval: 30m
   url: oci://ghcr.io/kagent-dev/kagent/helm/kagent
   ref:
     tag: "0.8.0"
@@ -20,7 +20,7 @@ metadata:
   name: kagent
   namespace: kagent
 spec:
-  interval: 1h
+  interval: 30m
   releaseName: kagent
   postRenderers:
   - kustomize:
@@ -67,7 +67,7 @@ spec:
       kgateway-agent:
         enabled: false
       observability-agent:
-        enabled: true
+        enabled: false
       promql-agent:
         enabled: false
     providers:

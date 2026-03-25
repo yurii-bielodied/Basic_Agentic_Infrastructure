@@ -18,7 +18,7 @@ metadata:
   name: qdrant
   namespace: qdrant
 spec:
-  interval: 1h
+  interval: 30m
   releaseName: qdrant
   chart:
     spec:
@@ -28,7 +28,7 @@ spec:
         kind: HelmRepository
         name: qdrant
         namespace: flux-system
-      interval: 1h
+      interval: 30m
 
   install:
     remediation:

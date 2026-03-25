@@ -9,7 +9,7 @@ metadata:
   name: phoenix
   namespace: flux-system
 spec:
-  interval: 1h
+  interval: 30m
   url: oci://registry-1.docker.io/arizephoenix/phoenix-helm
   ref:
     tag: "5.0.18"
@@ -20,7 +20,7 @@ metadata:
   name: phoenix
   namespace: phoenix
 spec:
-  interval: 1h
+  interval: 30m
   releaseName: phoenix
   chartRef:
     kind: OCIRepository
