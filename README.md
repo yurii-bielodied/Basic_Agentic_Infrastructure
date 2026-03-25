@@ -30,13 +30,14 @@ This project provisions and configures:
 - **Phoenix** for distributed tracing and observability (managed via Flux)
 - **Qdrant** vector database for semantic search and RAG (managed via Flux)
 - **MCP Governance** for governance and MCP control (managed via Flux)
+- **Flux Operator MCP** for Flux operations via MCP protocol (managed via Flux)
 - local **Ollama** model pull for `qwen3:14b`
 - Kagent configured to use **Ollama** as the default LLM provider
 
 The infrastructure is managed using **Flux** GitOps approach:
 
 - Terraform handles Kind cluster provisioning, Gateway API, Ollama and Flux setup
-- Flux manifests in `infra/` directory manage AgentGateway, Kagent, Phoenix, Qdrant and MCP Governance deployments
+- Flux manifests in `infra/` directory manage AgentGateway, Kagent, Phoenix, Qdrant, MCP Governance and Flux Operator MCP deployments
 
 ### Available User Interfaces
 
@@ -224,12 +225,14 @@ The deployment flow is:
    - Phoenix for distributed tracing and observability
    - Qdrant for vector storage and semantic search
    - MCP Governance for governance and MCP control
+   - Flux Operator MCP for exposing Flux operations via MCP
 5. Ollama pulls the `qwen3:14b` model on the host machine via Terraform provisioner.
 6. Kagent connects to Ollama via `http://host.docker.internal:11434`.
 7. The Kagent UI is exposed locally through AgentGateway proxy with basic authentication.
 8. Phoenix tracks distributed traces from all agent interactions.
 9. Qdrant provides vector database backend for semantic search and RAG capabilities.
 10. MCP Governance manages governance policies and MCP control across the platform.
+11. Flux Operator MCP integrates with Kagent as a RemoteMCPServer, exposing Flux cluster operations as MCP tools.
 
 ### Block Diagram
 
@@ -376,6 +379,13 @@ The `infra/` directory contains Flux manifests that define:
   - 10GB persistent storage for vector collections
   - REST API and dashboard available for collection management
 
+- **flux-operator-mcp.yaml** – Flux Operator MCP server integration:
+  - Flux Operator MCP Helm Release from ControlPlane charts (version 0.45.1)
+  - Exposes Flux cluster operations through MCP (Model Context Protocol)
+  - Integrates with Kagent as a RemoteMCPServer
+  - Allows AI agents to manage Flux resources and GitOps workflows
+  - Listens on `http://flux-operator-mcp.flux-system.svc.cluster.local:9090/mcp`
+
 The Flux system automatically reconciles these manifests from the Git repository, providing continuous deployment and declarative infrastructure management.
 
 ---
@@ -507,6 +517,14 @@ kubectl get svc -n mcp-governance
 kubectl get helmrelease -n mcp-governance
 ```
 
+Check Flux Operator MCP resources:
+
+```bash
+kubectl get pods -n flux-system -l app.kubernetes.io/name=flux-operator-mcp
+kubectl get helmrelease -n flux-system
+kubectl get remotemcpserver -n kagent  # Check MCP server integration with Kagent
+```
+
 Verify Flux reconciliation with events:
 
 ```bash
@@ -515,6 +533,7 @@ kubectl describe helmrelease kagent -n kagent
 kubectl describe helmrelease phoenix -n phoenix
 kubectl describe helmrelease qdrant -n qdrant
 kubectl describe helmrelease mcp-governance -n mcp-governance
+kubectl describe helmrelease flux-operator-mcp -n flux-system
 kubectl logs -n flux-system deployment/flux-operator  # Check Flux operator logs
 ```
 
@@ -777,5 +796,6 @@ This repository demonstrates how to combine:
 - **AgentGateway** for gateway-layer capabilities
 - **Phoenix** for distributed tracing and observability
 - **Qdrant** for vector storage and semantic search
+- **Flux Operator MCP** for AI-driven GitOps automation
 
 into one reproducible local AI platform with declarative infrastructure management.
