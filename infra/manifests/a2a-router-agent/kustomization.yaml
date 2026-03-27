@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
+# - a2a-router-agent-deploy.yaml
+# - a2a-router-agent-service.yaml
+# - kagent-a2a-router-agent.yaml
 - a2a-router-agent.yaml
-- a2a-router-agent-service.yaml
-- kagent-a2a-router-agent.yaml
