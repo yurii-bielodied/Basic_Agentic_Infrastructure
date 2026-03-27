@@ -8,4 +8,4 @@ resources:
 - qdrant.yaml
 - mcp-governance.yaml
 - flux-operator-mcp.yaml
-- agents.yaml
+- a2a-router-agent.yaml
