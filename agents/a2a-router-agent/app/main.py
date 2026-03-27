@@ -9,7 +9,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-app = FastAPI(title="Kagent A2A Router Agent", version="0.6.3")
+app = FastAPI(title="Kagent A2A Router Agent", version="0.6.4")
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -96,7 +96,8 @@ async def handle_jsonrpc(request: Request):
         return await process_message_stream(req_id=req_id, message=message)
 
     logger.warning(
-        "Unsupported JSON-RPC method=%s req_id=%s body=%s", method, req_id, body)
+        "Unsupported JSON-RPC method=%s req_id=%s body=%s", method, req_id, body
+    )
     return JSONResponse(
         rpc_error(req_id, -32601, f"Unsupported method: {method}"),
         status_code=400,
@@ -181,8 +182,8 @@ async def process_message(
             status_code=502,
         )
 
-    remote_task = extract_task(remote_result)
-    remote_text = extract_primary_text(remote_task)
+    remote_payload = extract_remote_payload(remote_result)
+    remote_text = extract_primary_text(remote_payload)
 
     summary = build_summary(
         normalized_task=normalized_task,
@@ -198,7 +199,7 @@ async def process_message(
         summary_text=summary,
         metadata={
             "normalizedTask": normalized_task,
-            "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
+            "remoteTaskId": remote_payload.get("id") if isinstance(remote_payload, dict) else None,
             "remoteContextId": remote_context_id,
         },
     )
@@ -295,8 +296,8 @@ async def process_message_stream(
                 task_text=normalized_task,
                 remote_context_id=remote_context_id,
             )
-            remote_task = extract_task(remote_result)
-            remote_text = extract_primary_text(remote_task)
+            remote_payload = extract_remote_payload(remote_result)
+            remote_text = extract_primary_text(remote_payload)
 
             summary = build_summary(
                 normalized_task=normalized_task,
@@ -318,7 +319,7 @@ async def process_message_stream(
                         text=summary,
                         metadata={
                             "normalizedTask": normalized_task,
-                            "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
+                            "remoteTaskId": remote_payload.get("id") if isinstance(remote_payload, dict) else None,
                             "remoteContextId": remote_context_id,
                         },
                     ),
@@ -471,60 +472,143 @@ def detect_namespace(text: str) -> Optional[str]:
 
 
 def extract_text_from_message(message: dict[str, Any]) -> str:
+    if not isinstance(message, dict):
+        return ""
+
     texts: list[str] = []
 
     for part in message.get("parts", []):
-        if isinstance(part, dict):
-            if isinstance(part.get("text"), str):
-                texts.append(part["text"])
-            elif isinstance(part.get("root"), dict) and isinstance(part["root"].get("text"), str):
-                texts.append(part["root"]["text"])
+        text = part_to_text(part)
+        if text:
+            texts.append(text)
 
     return "\n".join(texts).strip()
 
 
-def extract_task(remote_result: dict[str, Any]) -> dict[str, Any]:
+def part_to_text(part: Any) -> Optional[str]:
+    if not isinstance(part, dict):
+        return None
+
+    text = part.get("text")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+
+    root = part.get("root")
+    if isinstance(root, dict):
+        root_text = root.get("text")
+        if isinstance(root_text, str) and root_text.strip():
+            return root_text.strip()
+
+    data = part.get("data")
+    if data is not None:
+        if isinstance(data, str) and data.strip():
+            return data.strip()
+        try:
+            return json.dumps(data, ensure_ascii=False, indent=2)
+        except Exception:
+            return str(data)
+
+    return None
+
+
+def collect_texts_from_parts(parts: Any) -> list[str]:
+    texts: list[str] = []
+    if not isinstance(parts, list):
+        return texts
+
+    for part in parts:
+        text = part_to_text(part)
+        if text:
+            texts.append(text)
+
+    return texts
+
+
+def extract_remote_payload(remote_result: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(remote_result, dict):
         return {"artifacts": [{"parts": [{"kind": "text", "text": str(remote_result)}]}]}
 
-    if "result" in remote_result and isinstance(remote_result["result"], dict):
+    # JSON-RPC response wrapper
+    if isinstance(remote_result.get("result"), dict):
         result = remote_result["result"]
-        if "task" in result and isinstance(result["task"], dict):
+
+        # REST-like wrappers nested under result
+        if isinstance(result.get("task"), dict):
             return result["task"]
-        if "artifact" in result and isinstance(result["artifact"], dict):
+        if isinstance(result.get("message"), dict):
+            return result["message"]
+        if isinstance(result.get("artifact"), dict):
             return {"artifacts": [result["artifact"]]}
 
-    if "task" in remote_result and isinstance(remote_result["task"], dict):
+        # Direct Task / Message / artifact-update-like payload in result
+        if any(
+            key in result
+            for key in ("status", "artifacts", "parts", "history", "artifact", "kind", "id", "contextId")
+        ):
+            return result
+
+    # REST response wrapper
+    if isinstance(remote_result.get("task"), dict):
         return remote_result["task"]
+    if isinstance(remote_result.get("message"), dict):
+        return remote_result["message"]
+    if isinstance(remote_result.get("artifact"), dict):
+        return {"artifacts": [remote_result["artifact"]]}
 
     return remote_result
 
 
-def extract_primary_text(task: dict[str, Any]) -> Optional[str]:
-    if not isinstance(task, dict):
+def extract_primary_text(payload: dict[str, Any]) -> Optional[str]:
+    if not isinstance(payload, dict):
         return None
 
-    status_msg = task.get("status", {}).get("message")
-    if isinstance(status_msg, dict):
-        text = extract_text_from_message(status_msg)
-        if text:
-            return text
+    texts: list[str] = []
 
-    for artifact in task.get("artifacts", []):
-        if not isinstance(artifact, dict):
-            continue
-        for part in artifact.get("parts", []):
-            if isinstance(part, dict) and isinstance(part.get("text"), str):
-                return part["text"]
+    # 1) Prefer artifacts
+    artifacts = payload.get("artifacts")
+    if isinstance(artifacts, list):
+        for artifact in artifacts:
+            if isinstance(artifact, dict):
+                texts.extend(collect_texts_from_parts(artifact.get("parts")))
 
-    history = task.get("history", [])
-    for item in history:
-        if isinstance(item, dict):
-            text = extract_text_from_message(item)
-            if text:
-                return text
+    # 2) Single artifact wrapper
+    artifact = payload.get("artifact")
+    if isinstance(artifact, dict):
+        texts.extend(collect_texts_from_parts(artifact.get("parts")))
 
-    return None
+    # 3) status.message.parts
+    status = payload.get("status")
+    if isinstance(status, dict):
+        status_message = status.get("message")
+        if isinstance(status_message, dict):
+            texts.extend(collect_texts_from_parts(status_message.get("parts")))
+
+    # 4) Direct Message payload
+    texts.extend(collect_texts_from_parts(payload.get("parts")))
+
+    message = payload.get("message")
+    if isinstance(message, dict):
+        texts.extend(collect_texts_from_parts(message.get("parts")))
+
+    # 5) History fallback
+    history = payload.get("history")
+    if isinstance(history, list):
+        for item in history:
+            if isinstance(item, dict):
+                texts.extend(collect_texts_from_parts(item.get("parts")))
+
+    # De-duplicate while preserving order
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for text in texts:
+        if text not in seen:
+            seen.add(text)
+            deduped.append(text)
+
+    if not deduped:
+        return None
+
+    return "\n\n".join(deduped)
 
 
 def build_summary(
@@ -567,7 +651,7 @@ def build_agent_card() -> dict[str, Any]:
         "name": "kagent_a2a_router",
         "description": "A simple A2A router that normalizes Kubernetes listing requests and delegates them to a remote kagent Kubernetes A2A agent.",
         "url": f"{PUBLIC_BASE_URL}/",
-        "version": "0.6.3",
+        "version": "0.6.4",
         "protocolVersion": "0.2.6",
         "capabilities": {
             "streaming": True,
