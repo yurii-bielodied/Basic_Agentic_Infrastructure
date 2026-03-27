@@ -9,7 +9,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-app = FastAPI(title="Kagent A2A Router Agent", version="0.6.4")
+app = FastAPI(title="Kagent A2A Router Agent", version="0.6.5")
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -27,8 +27,12 @@ REMOTE_AGENT_BASE = os.getenv(
     "http://kagent-controller.kagent.svc.cluster.local:8083/api/a2a/kagent/k8s-agent/",
 ).rstrip("/")
 
-HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT_SECONDS", "180"))
 DEFAULT_NAMESPACE = os.getenv("DEFAULT_NAMESPACE", "default")
+
+CONNECT_TIMEOUT = float(os.getenv("HTTP_CONNECT_TIMEOUT_SECONDS", "10"))
+READ_TIMEOUT = float(os.getenv("HTTP_READ_TIMEOUT_SECONDS", "180"))
+WRITE_TIMEOUT = float(os.getenv("HTTP_WRITE_TIMEOUT_SECONDS", "30"))
+POOL_TIMEOUT = float(os.getenv("HTTP_POOL_TIMEOUT_SECONDS", "30"))
 
 RESOURCE_ALIASES = {
     "pod": "pods",
@@ -175,7 +179,7 @@ async def process_message(
         logger.exception("Remote kagent agent call failed")
         payload = task_failure_payload(
             context_id=router_context_id,
-            error_text=f"Remote kagent agent call failed: {exc}",
+            error_text=f"Remote kagent agent call failed: {format_exception(exc)}",
         )
         return JSONResponse(
             payload if rest_mode else rpc_result(req_id, payload),
@@ -337,7 +341,7 @@ async def process_message_stream(
                         context_id=router_context_id,
                         state="failed",
                         final=True,
-                        text=f"Remote kagent agent call failed: {exc}",
+                        text=f"Remote kagent agent call failed: {format_exception(exc)}",
                     ),
                 )
             )
@@ -380,15 +384,27 @@ async def send_message_to_remote_agent(
         },
     }
 
+    timeout = httpx.Timeout(
+        connect=CONNECT_TIMEOUT,
+        read=READ_TIMEOUT,
+        write=WRITE_TIMEOUT,
+        pool=POOL_TIMEOUT,
+    )
+
     async with httpx.AsyncClient(
-        timeout=HTTP_TIMEOUT,
+        timeout=timeout,
         follow_redirects=True,
     ) as client:
         logger.info(
-            "Sending remote message url=%s remote_context_id=%s task_text=%r",
+            "Sending remote message url=%s remote_context_id=%s task_text=%r "
+            "timeouts(connect=%s read=%s write=%s pool=%s)",
             remote_base,
             remote_context_id,
             task_text,
+            CONNECT_TIMEOUT,
+            READ_TIMEOUT,
+            WRITE_TIMEOUT,
+            POOL_TIMEOUT,
         )
         response = await client.post(remote_base, json=rpc_payload)
         response.raise_for_status()
@@ -420,7 +436,8 @@ def normalize_user_request(user_text: str) -> str:
         supported = ", ".join(sorted(set(RESOURCE_ALIASES.values())))
         raise ValueError(
             "Unsupported request. This demo router supports only resource listing for: "
-            f"{supported}. Examples: 'Get pods', 'Get pods kagent', 'Get services in namespace istio-system'."
+            f"{supported}. Examples: 'Get pods', 'Get pods kagent', "
+            "'Get services in namespace istio-system'."
         )
 
     if resource == "namespaces":
@@ -528,11 +545,9 @@ def extract_remote_payload(remote_result: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(remote_result, dict):
         return {"artifacts": [{"parts": [{"kind": "text", "text": str(remote_result)}]}]}
 
-    # JSON-RPC response wrapper
     if isinstance(remote_result.get("result"), dict):
         result = remote_result["result"]
 
-        # REST-like wrappers nested under result
         if isinstance(result.get("task"), dict):
             return result["task"]
         if isinstance(result.get("message"), dict):
@@ -540,14 +555,12 @@ def extract_remote_payload(remote_result: dict[str, Any]) -> dict[str, Any]:
         if isinstance(result.get("artifact"), dict):
             return {"artifacts": [result["artifact"]]}
 
-        # Direct Task / Message / artifact-update-like payload in result
         if any(
             key in result
             for key in ("status", "artifacts", "parts", "history", "artifact", "kind", "id", "contextId")
         ):
             return result
 
-    # REST response wrapper
     if isinstance(remote_result.get("task"), dict):
         return remote_result["task"]
     if isinstance(remote_result.get("message"), dict):
@@ -564,40 +577,34 @@ def extract_primary_text(payload: dict[str, Any]) -> Optional[str]:
 
     texts: list[str] = []
 
-    # 1) Prefer artifacts
     artifacts = payload.get("artifacts")
     if isinstance(artifacts, list):
         for artifact in artifacts:
             if isinstance(artifact, dict):
                 texts.extend(collect_texts_from_parts(artifact.get("parts")))
 
-    # 2) Single artifact wrapper
     artifact = payload.get("artifact")
     if isinstance(artifact, dict):
         texts.extend(collect_texts_from_parts(artifact.get("parts")))
 
-    # 3) status.message.parts
     status = payload.get("status")
     if isinstance(status, dict):
         status_message = status.get("message")
         if isinstance(status_message, dict):
             texts.extend(collect_texts_from_parts(status_message.get("parts")))
 
-    # 4) Direct Message payload
     texts.extend(collect_texts_from_parts(payload.get("parts")))
 
     message = payload.get("message")
     if isinstance(message, dict):
         texts.extend(collect_texts_from_parts(message.get("parts")))
 
-    # 5) History fallback
     history = payload.get("history")
     if isinstance(history, list):
         for item in history:
             if isinstance(item, dict):
                 texts.extend(collect_texts_from_parts(item.get("parts")))
 
-    # De-duplicate while preserving order
     deduped: list[str] = []
     seen: set[str] = set()
     for text in texts:
@@ -646,12 +653,22 @@ def build_summary(
     )
 
 
+def format_exception(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return f"{exc.__class__.__name__}: {message}"
+    return exc.__class__.__name__
+
+
 def build_agent_card() -> dict[str, Any]:
     return {
         "name": "kagent_a2a_router",
-        "description": "A simple A2A router that normalizes Kubernetes listing requests and delegates them to a remote kagent Kubernetes A2A agent.",
+        "description": (
+            "A simple A2A router that normalizes Kubernetes listing requests "
+            "and delegates them to a remote kagent Kubernetes A2A agent."
+        ),
         "url": f"{PUBLIC_BASE_URL}/",
-        "version": "0.6.4",
+        "version": "0.6.5",
         "protocolVersion": "0.2.6",
         "capabilities": {
             "streaming": True,
@@ -664,7 +681,10 @@ def build_agent_card() -> dict[str, Any]:
             {
                 "id": "route-k8s-resource-list",
                 "name": "Route Kubernetes resource list tasks",
-                "description": "Converts simple user requests into normalized Kubernetes listing tasks and delegates them to a remote kagent A2A agent.",
+                "description": (
+                    "Converts simple user requests into normalized Kubernetes "
+                    "listing tasks and delegates them to a remote kagent A2A agent."
+                ),
                 "tags": ["k8s", "a2a", "router", "kagent"],
                 "examples": SUPPORTED_EXAMPLES,
                 "inputModes": ["text"],
