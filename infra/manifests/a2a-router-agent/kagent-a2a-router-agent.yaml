@@ -3,12 +3,15 @@ kind: Agent
 metadata:
   name: a2a-router-agent
   namespace: kagent
+  labels:
+    app: a2a-router-agent
+    role: orchestration
 spec:
-  description: Read-only Kubernetes A2A agent for listing resources
+  description: "Read-only Kubernetes A2A agent for listing resources"
   type: Declarative
   declarative:
     modelConfig: default-model-config
-    systemMessage: |-
+    systemMessage: |
       You are a Kubernetes read-only assistant.
 
       Rules:
