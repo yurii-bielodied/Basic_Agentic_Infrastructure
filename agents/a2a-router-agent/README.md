@@ -34,6 +34,29 @@ k8s-agent
 Kubernetes tools in kagent
 ```
 
-## Build the router image Replace the image name in infra/manifests/a2a-router-agent/a2a-router-agent.yaml first.
+## Build and Deploy
 
-Run a2a-router-agent GitHub Action
+For detailed build and deployment instructions, see the main project README:
+
+- **Building the image:** see [`README.md` - Building and Deploying the A2A Router Agent](../../README.md#building-and-deploying-the-a2a-router-agent)
+- **Deploying via Flux:** see [`README.md` - Custom Agent: A2A Router Agent](../../README.md#custom-agent-a2a-router-agent)
+
+### Quick Build
+
+1. Update the image reference in `infra/manifests/a2a-router-agent/a2a-router-agent.yaml`
+2. Trigger the GitHub Actions workflow (or manually build with Docker)
+3. Flux automatically reconciles the new image
+
+### Accessing the Agent Card
+
+The running agent exposes its metadata via the Agent Card URI:
+
+```bash
+kubectl port-forward -n kagent svc/kagent-controller 8083:8083
+```
+
+Then access:
+
+```text
+http://127.0.0.1:8083/api/a2a/kagent/a2a-router-agent/.well-known/agent.json
+```

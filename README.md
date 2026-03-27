@@ -1,4 +1,4 @@
-# Kagent AI Agent Platform on Kind with Terraform, Flux, AgentGateway, Phoenix, Qdrant, MCP Governance, Flux Operator MCP and Ollama
+# Kagent AI Agent Platform on Kind with Terraform, Flux, AgentGateway, A2A Router Agent, Phoenix, Qdrant, MCP Governance, Flux Operator MCP and Ollama
 
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-623CE4?logo=terraform&logoColor=white)
 ![Flux](https://img.shields.io/badge/Flux-GitOps-CE3262?logo=fluxcd&logoColor=white)
@@ -12,8 +12,9 @@
 ![AgentGateway](https://img.shields.io/badge/AgentGateway-Gateway%20Layer-2E8B57)
 ![MCP-Governance](https://img.shields.io/badge/MCP%20Governance-Control%20Panel-9932CC)
 ![Flux-Operator-MCP](https://img.shields.io/badge/Flux%20Operator%20MCP-GitOps%20Automation-FF69B4)
+![A2A-Router-Agent](https://img.shields.io/badge/A2A%20Router%20Agent-Custom%20K8s%20Agent-FF8C00)
 
-A complete local Kubernetes-based AI agent platform deployed with **Terraform** and **Flux CD** on a **Kind** cluster. The stack includes **Kagent** for agent interactions, **Phoenix** for distributed tracing and observability, **Qdrant** for vector storage and semantic search, **MCP Governance** for governance control, **Flux Operator MCP** for AI-driven GitOps automation, and **Ollama** for local LLM inference. All components are deployed using **Flux** GitOps for fully declarative infrastructure as code.
+A complete local Kubernetes-based AI agent platform deployed with **Terraform** and **Flux CD** on a **Kind** cluster. The stack includes **Kagent** for agent interactions, a custom **A2A Router Agent** for Kubernetes resource queries, **Phoenix** for distributed tracing and observability, **Qdrant** for vector storage and semantic search, **MCP Governance** for governance control, **Flux Operator MCP** for AI-driven GitOps automation, and **Ollama** for local LLM inference. All components are deployed using **Flux** GitOps for fully declarative infrastructure as code.
 
 This setup is useful for local development, demos, experimentation and validating the deployment flow before moving to a larger Kubernetes environment.
 
@@ -28,12 +29,13 @@ This project provisions and configures:
 - **Flux CD** for infrastructure as code GitOps
 - **AgentGateway** CRDs and controller (managed via Flux)
 - **Kagent** CRDs and application (managed via Flux)
+- **A2A Router Agent** - custom read-only Kubernetes agent (managed via Flux)
 - **Phoenix** for distributed tracing and observability (managed via Flux)
 - **Qdrant** vector database for semantic search and RAG (managed via Flux)
 - **MCP Governance** for governance and MCP control (managed via Flux)
 - **Flux Operator MCP** for Flux operations via MCP protocol (managed via Flux)
 - local **Ollama** model pull for `qwen3:14b`
-- Kagent configured to use **Ollama** as the default LLM provider
+- Kagent configured to use **Ollama** as the default LLM provider and via `default-model-config`
 
 The infrastructure is managed using **Flux** GitOps approach:
 
@@ -80,6 +82,13 @@ The infrastructure is managed using **Flux** GitOps approach:
    - URL: http://localhost:9080
 
 ![Flux Status UI](img/flux_ui.jpg)
+
+7. **A2A Router Agent Card** (port 8083) - Custom Kubernetes agent metadata and API
+   - Access: `kubectl port-forward -n kagent svc/kagent-controller 8083:8083`
+   - Agent Card URL: http://127.0.0.1:8083/api/a2a/kagent/a2a-router-agent/.well-known/agent.json
+   - Agent metadata provides AI model integration and request routing
+
+![A2A Router Agent Card](img/a2a_router_agent_card.jpg)
 
 ### Access Kagent UI
 
@@ -147,6 +156,100 @@ Then open in your browser:
 ```text
 http://localhost:6006
 ```
+
+### Access A2A Router Agent Card
+
+The A2A Router Agent exposes its metadata and capabilities via a well-known Agent Card URI:
+
+```bash
+kubectl port-forward -n kagent svc/kagent-controller 8083:8083
+```
+
+Then access the agent card JSON:
+
+```text
+http://127.0.0.1:8083/api/a2a/kagent/a2a-router-agent/.well-known/agent.json
+```
+
+**Agent Card Contents:**
+
+- Agent metadata and description
+- Supported capabilities and tools
+- Configuration for LLM provider (Ollama via `default-model-config`)
+- API endpoints for A2A communication
+
+## Custom Agent: A2A Router Agent
+
+The platform includes a custom **A2A Router Agent** that provides read-only Kubernetes resource listing through an A2A (Agent-to-Agent) interface:
+
+**Features:**
+
+- Exposes Agent Card at `/api/a2a/kagent/a2a-router-agent/.well-known/agent.json`
+- Accepts JSON-RPC A2A requests
+- Normalizes Kubernetes read-only listing requests (pods, deployments, services, etc.)
+- Delegates normalized requests to the built-in `k8s-agent` in Kagent
+- Returns delegated results as completed A2A tasks
+- Supports two configuration modes:
+  - **BYO (Bring Your Own)**: Uses custom Docker image with custom deployment (currently active)
+  - **Declarative**: Uses Kagent's declarative agent config with `default-model-config`
+
+**Current Configuration:** BYO mode with custom deployment (see [infra/manifests/a2a-router-agent/a2a-router-agent.yaml](infra/manifests/a2a-router-agent/a2a-router-agent.yaml))
+
+**Alternative Configuration:** Declarative mode with LLM integration is available in [infra/manifests/a2a-router-agent/kagent-a2a-router-agent.yaml](infra/manifests/a2a-router-agent/kagent-a2a-router-agent.yaml) - to use it, update the kustomization.yaml resources list to reference this file instead.
+
+**Source Code:** see [`agents/a2a-router-agent/`](agents/a2a-router-agent/)
+
+### Building and Deploying the A2A Router Agent
+
+The A2A Router Agent is automatically deployed via Flux from the container image. To build and update the image:
+
+**1. Update the image reference** in [infra/manifests/a2a-router-agent/a2a-router-agent.yaml](infra/manifests/a2a-router-agent/a2a-router-agent.yaml):
+
+```yaml
+image: ghcr.io/your-org/a2a-router-agent:v1.0.0 # Replace with your image
+```
+
+**2. Build and push the image:**
+
+Use the GitHub Actions workflow in [`agents/a2a-router-agent/.github/workflows/`](agents/a2a-router-agent/.github/workflows/) to automatically build and push the image to your container registry.
+
+The workflow:
+
+- Triggers on commits to the `agents/a2a-router-agent/` directory
+- Builds the Docker image from [agents/a2a-router-agent/Dockerfile](agents/a2a-router-agent/Dockerfile)
+- Pushes to your configured container registry
+- Flux automatically reconciles the new image version
+
+**3. Verify deployment:**
+
+```bash
+kubectl get pods -n kagent -l app=a2a-router-agent
+kubectl logs -n kagent -l app=a2a-router-agent -f
+```
+
+## Model Configuration
+
+The Kagent platform uses a centralized **ModelConfig** for LLM provider configuration:
+
+**File:** [infra/manifests/kagent/model-config.yaml](infra/manifests/kagent/model-config.yaml)
+
+**Default Configuration:**
+
+```yaml
+name: default-model-config
+provider: Ollama
+model: qwen3:14b
+ollama:
+  host: http://host.docker.internal:11434
+```
+
+This configuration is referenced by all agents in the platform, including the A2A Router Agent. Agents use this configuration to:
+
+- Connect to the Ollama LLM provider
+- Select the model (`qwen3:14b`)
+- Enable AI-driven request routing and processing
+
+To update the model or provider, modify [infra/manifests/kagent/model-config.yaml](infra/manifests/kagent/model-config.yaml) and commit. Flux will automatically reconcile the changes.
 
 **Features:**
 
