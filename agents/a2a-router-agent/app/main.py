@@ -9,7 +9,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-app = FastAPI(title="Kagent A2A Router Agent", version="0.6.2")
+app = FastAPI(title="Kagent A2A Router Agent", version="0.6.3")
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -95,6 +95,8 @@ async def handle_jsonrpc(request: Request):
     if method in {"message/stream", "SendStreamingMessage"}:
         return await process_message_stream(req_id=req_id, message=message)
 
+    logger.warning(
+        "Unsupported JSON-RPC method=%s req_id=%s body=%s", method, req_id, body)
     return JSONResponse(
         rpc_error(req_id, -32601, f"Unsupported method: {method}"),
         status_code=400,
@@ -107,6 +109,14 @@ async def handle_rest_send(request: Request) -> JSONResponse:
     message = body.get("message", {})
     logger.info("Received REST send request")
     return await process_message(req_id=uuid4().hex, message=message, rest_mode=True)
+
+
+@app.post("/message:stream")
+async def handle_rest_stream(request: Request) -> StreamingResponse:
+    body = await request.json()
+    message = body.get("message", {})
+    logger.info("Received REST stream request")
+    return await process_message_stream(req_id=uuid4().hex, message=message)
 
 
 async def process_message(
@@ -155,9 +165,8 @@ async def process_message(
     )
 
     try:
-        remote_card = await fetch_remote_agent_card()
         remote_result = await send_message_to_remote_agent(
-            remote_url=remote_card.get("url", REMOTE_AGENT_BASE),
+            remote_url=REMOTE_AGENT_BASE,
             task_text=normalized_task,
             remote_context_id=remote_context_id,
         )
@@ -177,7 +186,7 @@ async def process_message(
 
     summary = build_summary(
         normalized_task=normalized_task,
-        remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
+        remote_endpoint=REMOTE_AGENT_BASE.rstrip("/") + "/",
         remote_text=remote_text,
         remote_result=remote_result,
         router_context_id=router_context_id,
@@ -189,7 +198,6 @@ async def process_message(
         summary_text=summary,
         metadata={
             "normalizedTask": normalized_task,
-            "remoteAgentName": remote_card.get("name"),
             "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
             "remoteContextId": remote_context_id,
         },
@@ -206,6 +214,13 @@ async def process_message_stream(
     router_context_id = message.get("contextId") or uuid4().hex
     task_id = uuid4().hex
     user_text = extract_text_from_message(message)
+
+    logger.info(
+        "Processing stream req_id=%s router_context_id=%s user_text=%r",
+        req_id,
+        router_context_id,
+        user_text,
+    )
 
     async def event_generator():
         yield sse_data(
@@ -275,9 +290,8 @@ async def process_message_stream(
         )
 
         try:
-            remote_card = await fetch_remote_agent_card()
             remote_result = await send_message_to_remote_agent(
-                remote_url=remote_card.get("url", REMOTE_AGENT_BASE),
+                remote_url=REMOTE_AGENT_BASE,
                 task_text=normalized_task,
                 remote_context_id=remote_context_id,
             )
@@ -286,7 +300,7 @@ async def process_message_stream(
 
             summary = build_summary(
                 normalized_task=normalized_task,
-                remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
+                remote_endpoint=REMOTE_AGENT_BASE.rstrip("/") + "/",
                 remote_text=remote_text,
                 remote_result=remote_result,
                 router_context_id=router_context_id,
@@ -304,7 +318,6 @@ async def process_message_stream(
                         text=summary,
                         metadata={
                             "normalizedTask": normalized_task,
-                            "remoteAgentName": remote_card.get("name"),
                             "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
                             "remoteContextId": remote_context_id,
                         },
@@ -338,40 +351,6 @@ async def process_message_stream(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-async def fetch_remote_agent_card() -> dict[str, Any]:
-    base = REMOTE_AGENT_BASE.rstrip("/")
-    candidates = [
-        f"{base}/.well-known/agent.json",
-        f"{base}/.well-known/agent-card.json",
-    ]
-
-    async with httpx.AsyncClient(
-        timeout=HTTP_TIMEOUT,
-        follow_redirects=True,
-    ) as client:
-        last_error: Optional[Exception] = None
-
-        for url in candidates:
-            try:
-                logger.info("Fetching remote agent card from %s", url)
-                response = await client.get(url)
-                response.raise_for_status()
-                data = response.json()
-                if isinstance(data, dict):
-                    logger.info("Fetched remote agent card from %s", url)
-                    return data
-                raise RuntimeError(
-                    f"Remote agent card from {url} is not a JSON object")
-            except Exception as exc:
-                logger.warning(
-                    "Failed to fetch remote agent card from %s: %s", url, exc)
-                last_error = exc
-
-        if last_error:
-            raise last_error
-        raise RuntimeError("No remote agent card endpoint responded")
 
 
 async def send_message_to_remote_agent(
@@ -412,13 +391,16 @@ async def send_message_to_remote_agent(
         )
         response = await client.post(remote_base, json=rpc_payload)
         response.raise_for_status()
-        result = response.json()
 
+        content_type = response.headers.get("content-type", "")
         logger.info(
-            "Remote response status=%s url=%s",
+            "Remote response status=%s url=%s content_type=%s",
             response.status_code,
             str(response.url),
+            content_type,
         )
+
+        result = response.json()
 
         if isinstance(result, dict) and "error" in result:
             raise RuntimeError(
@@ -509,7 +491,7 @@ def extract_task(remote_result: dict[str, Any]) -> dict[str, Any]:
         result = remote_result["result"]
         if "task" in result and isinstance(result["task"], dict):
             return result["task"]
-        if "artifact" in result:
+        if "artifact" in result and isinstance(result["artifact"], dict):
             return {"artifacts": [result["artifact"]]}
 
     if "task" in remote_result and isinstance(remote_result["task"], dict):
@@ -534,6 +516,13 @@ def extract_primary_text(task: dict[str, Any]) -> Optional[str]:
         for part in artifact.get("parts", []):
             if isinstance(part, dict) and isinstance(part.get("text"), str):
                 return part["text"]
+
+    history = task.get("history", [])
+    for item in history:
+        if isinstance(item, dict):
+            text = extract_text_from_message(item)
+            if text:
+                return text
 
     return None
 
@@ -578,7 +567,7 @@ def build_agent_card() -> dict[str, Any]:
         "name": "kagent_a2a_router",
         "description": "A simple A2A router that normalizes Kubernetes listing requests and delegates them to a remote kagent Kubernetes A2A agent.",
         "url": f"{PUBLIC_BASE_URL}/",
-        "version": "0.6.2",
+        "version": "0.6.3",
         "protocolVersion": "0.2.6",
         "capabilities": {
             "streaming": True,
@@ -609,12 +598,13 @@ def build_completed_task(
     return {
         "id": uuid4().hex,
         "contextId": context_id,
+        "kind": "task",
         "status": {
             "state": "completed",
             "message": {
                 "role": "agent",
-                "parts": [{"kind": "text", "text": summary_text}],
                 "messageId": uuid4().hex,
+                "parts": [{"kind": "text", "text": summary_text}],
             },
         },
         "artifacts": [
@@ -632,12 +622,13 @@ def task_failure_payload(context_id: Optional[str], error_text: str) -> dict[str
     task = {
         "id": uuid4().hex,
         "contextId": context_id or uuid4().hex,
+        "kind": "task",
         "status": {
             "state": "failed",
             "message": {
                 "role": "agent",
-                "parts": [{"kind": "text", "text": error_text}],
                 "messageId": uuid4().hex,
+                "parts": [{"kind": "text", "text": error_text}],
             },
         },
         "artifacts": [

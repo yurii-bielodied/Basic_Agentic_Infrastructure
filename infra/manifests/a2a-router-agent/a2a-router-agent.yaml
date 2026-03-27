@@ -11,4 +11,4 @@ spec:
   type: BYO
   byo:
     deployment:
-      image: ghcr.io/yurii-bielodied/a2a-router-agent:v1.0.0
+      image: ghcr.io/yurii-bielodied/a2a-router-agent:v1.0.1
