@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: router
-        image: your-registry/a2a-router-agent:latest
+        image: ghcr.io/yurii-bielodied/a2a-router-agent:v1.0.0
         imagePullPolicy: Always
         ports:
         - name: http

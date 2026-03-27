@@ -33,3 +33,7 @@ k8s-agent
     v
 Kubernetes tools in kagent
 ```
+
+## Build the router image Replace the image name in infra/manifests/a2a-router-agent/a2a-router-agent.yaml first.
+
+Run a2a-router-agent GitHub Action
