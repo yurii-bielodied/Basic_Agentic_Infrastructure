@@ -12,3 +12,4 @@ spec:
   byo:
     deployment:
       image: ghcr.io/yurii-bielodied/a2a-router-agent:v1.0.0
+      imagePullPolicy: Always
