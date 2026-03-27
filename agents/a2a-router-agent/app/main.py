@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 from typing import Any, Optional
@@ -8,7 +9,13 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-app = FastAPI(title="Kagent A2A Router Agent", version="0.6.0")
+app = FastAPI(title="Kagent A2A Router Agent", version="0.6.1")
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("a2a-router-agent")
 
 PUBLIC_BASE_URL = os.getenv(
     "PUBLIC_BASE_URL",
@@ -80,6 +87,8 @@ async def handle_jsonrpc(request: Request):
     params = body.get("params", {})
     message = params.get("message", {})
 
+    logger.info("Received JSON-RPC request method=%s req_id=%s", method, req_id)
+
     if method in {"message/send", "SendMessage"}:
         return await process_message(req_id=req_id, message=message, rest_mode=False)
 
@@ -96,6 +105,7 @@ async def handle_jsonrpc(request: Request):
 async def handle_rest_send(request: Request) -> JSONResponse:
     body = await request.json()
     message = body.get("message", {})
+    logger.info("Received REST send request")
     return await process_message(req_id=uuid4().hex, message=message, rest_mode=True)
 
 
@@ -104,12 +114,19 @@ async def process_message(
     message: dict[str, Any],
     rest_mode: bool = False,
 ) -> JSONResponse:
-    context_id = message.get("contextId") or uuid4().hex
+    router_context_id = message.get("contextId") or uuid4().hex
     user_text = extract_text_from_message(message)
+
+    logger.info(
+        "Processing message req_id=%s router_context_id=%s user_text=%r",
+        req_id,
+        router_context_id,
+        user_text,
+    )
 
     if not user_text.strip():
         payload = task_failure_payload(
-            context_id=context_id,
+            context_id=router_context_id,
             error_text="Empty input. Example: 'Get pods' or 'List namespaces'.",
         )
         return JSONResponse(
@@ -119,9 +136,10 @@ async def process_message(
 
     try:
         normalized_task = normalize_user_request(user_text)
+        logger.info("Normalized request: %s", normalized_task)
     except ValueError as exc:
         payload = task_failure_payload(
-            context_id=context_id,
+            context_id=router_context_id,
             error_text=str(exc),
         )
         return JSONResponse(
@@ -129,16 +147,24 @@ async def process_message(
             status_code=400,
         )
 
+    remote_context_id = f"remote-{uuid4().hex}"
+    logger.info(
+        "Using separate remote_context_id=%s for router_context_id=%s",
+        remote_context_id,
+        router_context_id,
+    )
+
     try:
         remote_card = await fetch_remote_agent_card()
         remote_result = await send_message_to_remote_agent(
             remote_url=remote_card.get("url", REMOTE_AGENT_BASE),
             task_text=normalized_task,
-            context_id=context_id,
+            remote_context_id=remote_context_id,
         )
     except Exception as exc:
+        logger.exception("Remote kagent agent call failed")
         payload = task_failure_payload(
-            context_id=context_id,
+            context_id=router_context_id,
             error_text=f"Remote kagent agent call failed: {exc}",
         )
         return JSONResponse(
@@ -154,15 +180,18 @@ async def process_message(
         remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
         remote_text=remote_text,
         remote_result=remote_result,
+        router_context_id=router_context_id,
+        remote_context_id=remote_context_id,
     )
 
     task = build_completed_task(
-        context_id=context_id,
+        context_id=router_context_id,
         summary_text=summary,
         metadata={
             "normalizedTask": normalized_task,
             "remoteAgentName": remote_card.get("name"),
             "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
+            "remoteContextId": remote_context_id,
         },
     )
 
@@ -174,7 +203,7 @@ async def process_message_stream(
     req_id: str,
     message: dict[str, Any],
 ) -> StreamingResponse:
-    context_id = message.get("contextId") or uuid4().hex
+    router_context_id = message.get("contextId") or uuid4().hex
     task_id = uuid4().hex
     user_text = extract_text_from_message(message)
 
@@ -184,7 +213,7 @@ async def process_message_stream(
                 req_id,
                 build_status_update_event(
                     task_id=task_id,
-                    context_id=context_id,
+                    context_id=router_context_id,
                     state="working",
                     final=False,
                     text="Router agent is processing the request.",
@@ -198,7 +227,7 @@ async def process_message_stream(
                     req_id,
                     build_status_update_event(
                         task_id=task_id,
-                        context_id=context_id,
+                        context_id=router_context_id,
                         state="failed",
                         final=True,
                         text="Empty input. Example: 'Get pods' or 'List namespaces'.",
@@ -209,13 +238,14 @@ async def process_message_stream(
 
         try:
             normalized_task = normalize_user_request(user_text)
+            logger.info("Normalized streaming request: %s", normalized_task)
         except ValueError as exc:
             yield sse_data(
                 stream_result(
                     req_id,
                     build_status_update_event(
                         task_id=task_id,
-                        context_id=context_id,
+                        context_id=router_context_id,
                         state="failed",
                         final=True,
                         text=str(exc),
@@ -229,7 +259,7 @@ async def process_message_stream(
                 req_id,
                 build_status_update_event(
                     task_id=task_id,
-                    context_id=context_id,
+                    context_id=router_context_id,
                     state="working",
                     final=False,
                     text=f"Delegating normalized task: {normalized_task}",
@@ -237,12 +267,19 @@ async def process_message_stream(
             )
         )
 
+        remote_context_id = f"remote-{uuid4().hex}"
+        logger.info(
+            "Streaming mode: router_context_id=%s remote_context_id=%s",
+            router_context_id,
+            remote_context_id,
+        )
+
         try:
             remote_card = await fetch_remote_agent_card()
             remote_result = await send_message_to_remote_agent(
                 remote_url=remote_card.get("url", REMOTE_AGENT_BASE),
                 task_text=normalized_task,
-                context_id=context_id,
+                remote_context_id=remote_context_id,
             )
             remote_task = extract_task(remote_result)
             remote_text = extract_primary_text(remote_task)
@@ -252,6 +289,8 @@ async def process_message_stream(
                 remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
                 remote_text=remote_text,
                 remote_result=remote_result,
+                router_context_id=router_context_id,
+                remote_context_id=remote_context_id,
             )
 
             yield sse_data(
@@ -259,7 +298,7 @@ async def process_message_stream(
                     req_id,
                     build_status_update_event(
                         task_id=task_id,
-                        context_id=context_id,
+                        context_id=router_context_id,
                         state="completed",
                         final=True,
                         text=summary,
@@ -267,6 +306,7 @@ async def process_message_stream(
                             "normalizedTask": normalized_task,
                             "remoteAgentName": remote_card.get("name"),
                             "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
+                            "remoteContextId": remote_context_id,
                         },
                     ),
                 )
@@ -274,12 +314,13 @@ async def process_message_stream(
             return
 
         except Exception as exc:
+            logger.exception("Remote kagent agent streaming call failed")
             yield sse_data(
                 stream_result(
                     req_id,
                     build_status_update_event(
                         task_id=task_id,
-                        context_id=context_id,
+                        context_id=router_context_id,
                         state="failed",
                         final=True,
                         text=f"Remote kagent agent call failed: {exc}",
@@ -311,14 +352,18 @@ async def fetch_remote_agent_card() -> dict[str, Any]:
 
         for url in candidates:
             try:
+                logger.info("Fetching remote agent card from %s", url)
                 response = await client.get(url)
                 response.raise_for_status()
                 data = response.json()
                 if isinstance(data, dict):
+                    logger.info("Fetched remote agent card from %s", url)
                     return data
                 raise RuntimeError(
                     f"Remote agent card from {url} is not a JSON object")
             except Exception as exc:
+                logger.warning(
+                    "Failed to fetch remote agent card from %s: %s", url, exc)
                 last_error = exc
 
         if last_error:
@@ -329,7 +374,7 @@ async def fetch_remote_agent_card() -> dict[str, Any]:
 async def send_message_to_remote_agent(
     remote_url: str,
     task_text: str,
-    context_id: str,
+    remote_context_id: str,
 ) -> dict[str, Any]:
     remote_base = remote_url.rstrip("/")
 
@@ -341,7 +386,7 @@ async def send_message_to_remote_agent(
             "message": {
                 "role": "user",
                 "messageId": uuid4().hex,
-                "contextId": context_id,
+                "contextId": remote_context_id,
                 "parts": [
                     {
                         "kind": "text",
@@ -362,9 +407,21 @@ async def send_message_to_remote_agent(
 
         for url in candidates:
             try:
+                logger.info(
+                    "Sending remote message url=%s remote_context_id=%s task_text=%r",
+                    url,
+                    remote_context_id,
+                    task_text,
+                )
                 response = await client.post(url, json=rpc_payload)
                 response.raise_for_status()
                 result = response.json()
+
+                logger.info(
+                    "Remote response status=%s url=%s",
+                    response.status_code,
+                    url,
+                )
 
                 if isinstance(result, dict) and "error" in result:
                     raise RuntimeError(
@@ -372,6 +429,7 @@ async def send_message_to_remote_agent(
 
                 return result
             except Exception as exc:
+                logger.warning("Remote invocation failed for %s: %s", url, exc)
                 last_error = exc
 
         if last_error:
@@ -410,9 +468,9 @@ def detect_resource(text: str) -> Optional[str]:
 
 def detect_namespace(text: str) -> Optional[str]:
     patterns = [
-        r"\b(?:namespace|ns)\s+([a-z0-9-]+)\b",
         r"\bfrom\s+(?:namespace|ns)\s+([a-z0-9-]+)\b",
         r"\bin\s+(?:namespace|ns)\s+([a-z0-9-]+)\b",
+        r"\b(?:namespace|ns)\s+([a-z0-9-]+)\b",
         r"\bin\s+([a-z0-9-]+)\b",
     ]
 
@@ -496,6 +554,8 @@ def build_summary(
     remote_endpoint: str,
     remote_text: Optional[str],
     remote_result: Optional[dict[str, Any]] = None,
+    router_context_id: Optional[str] = None,
+    remote_context_id: Optional[str] = None,
 ) -> str:
     if remote_text:
         reply_text = remote_text
@@ -503,8 +563,19 @@ def build_summary(
         reply_text = json.dumps(remote_result, ensure_ascii=False,
                                 indent=2) if remote_result else "[no text returned]"
 
+    details = []
+    if router_context_id:
+        details.append(f"Router context ID: {router_context_id}")
+    if remote_context_id:
+        details.append(f"Remote context ID: {remote_context_id}")
+
+    details_block = "\n".join(details)
+    if details_block:
+        details_block = f"{details_block}\n\n"
+
     return (
         f"Router agent normalized the request to: {normalized_task}\n\n"
+        f"{details_block}"
         f"Remote agent endpoint: {remote_endpoint}\n\n"
         f"Remote agent reply:\n{reply_text}"
     )
@@ -515,7 +586,7 @@ def build_agent_card() -> dict[str, Any]:
         "name": "kagent_a2a_router",
         "description": "A simple A2A router that normalizes Kubernetes listing requests and delegates them to a remote kagent Kubernetes A2A agent.",
         "url": f"{PUBLIC_BASE_URL}/",
-        "version": "0.6.0",
+        "version": "0.6.1",
         "protocolVersion": "0.2.6",
         "capabilities": {
             "streaming": True,
