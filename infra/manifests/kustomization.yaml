@@ -8,3 +8,4 @@ resources:
 - qdrant.yaml
 - mcp-governance.yaml
 - flux-operator-mcp.yaml
+- agents.yaml

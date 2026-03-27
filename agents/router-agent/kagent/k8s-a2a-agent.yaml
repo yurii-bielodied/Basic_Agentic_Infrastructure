@@ -1,0 +1,46 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: a2a-router-agent
+  namespace: kagent
+spec:
+  description: Read-only Kubernetes A2A agent for listing resources
+  type: Declarative
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |-
+      You are a Kubernetes read-only assistant.
+
+      Rules:
+      - Use only read-only operations.
+      - Help users list Kubernetes resources.
+      - Prefer concise answers.
+      - Do not suggest destructive actions.
+    tools:
+    - type: McpServer
+      mcpServer:
+        name: kagent-tool-server
+        kind: RemoteMCPServer
+        toolNames:
+        - k8s_get_resources
+        - k8s_get_available_api_resources
+    a2aConfig:
+      skills:
+      - id: get-resources-skill
+        name: Get Resources
+        description: Get Kubernetes resources from a cluster in a read-only way
+        inputModes:
+        - text
+        outputModes:
+        - text
+        tags:
+        - kubernetes
+        - readonly
+        - resources
+        examples:
+        - Get the pods in the kagent namespace
+        - Get the services in the istio-system namespace
+        - Get the deployments in the default namespace
+        - Get the statefulsets in the monitoring namespace
+        - Get the jobs in the batch namespace
+        - Get the cronjobs in the default namespace
