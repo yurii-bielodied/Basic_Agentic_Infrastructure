@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Docker image tag to publish
+        description: Docker Image version tag to publish, without "v" prefix, for example 1.0.0
         required: true
         default: "1.0.0"
         type: string
@@ -37,7 +37,7 @@ jobs:
       with:
         images: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
         tags: |
-          type=raw,value=${{ inputs.image_tag }}
+          type=raw,value=v${{ inputs.image_tag }}
           type=sha
 
     - name: Build and push Docker image
