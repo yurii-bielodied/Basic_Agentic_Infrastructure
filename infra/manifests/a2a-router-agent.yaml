@@ -7,7 +7,7 @@ spec:
 
   dependsOn:
   - name: kagent
-    namespace: kagent
+    namespace: flux-system
 
   interval: 5m
   path: ./infra/manifests/a2a-router-agent
