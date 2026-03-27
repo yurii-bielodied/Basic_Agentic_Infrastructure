@@ -8,7 +8,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-app = FastAPI(title="Kagent A2A Router Agent", version="0.4.0")
+app = FastAPI(title="Kagent A2A Router Agent", version="0.6.0")
 
 PUBLIC_BASE_URL = os.getenv(
     "PUBLIC_BASE_URL",
@@ -41,13 +41,19 @@ RESOURCE_ALIASES = {
     "cronjob": "cronjobs",
     "cronjobs": "cronjobs",
     "cj": "cronjobs",
+    "namespace": "namespaces",
+    "namespaces": "namespaces",
+    "ns": "namespaces",
 }
 
 SUPPORTED_EXAMPLES = [
-    "Show pods in namespace kagent",
+    "Get pods",
+    "Get pods kagent",
+    "Get pods in namespace kagent",
+    "Get pods from ns kagent",
     "Get services in namespace istio-system",
-    "List deployments in namespace phoenix",
-    "Show cronjobs in namespace default",
+    "List deployments in phoenix",
+    "List namespaces",
 ]
 
 
@@ -104,7 +110,7 @@ async def process_message(
     if not user_text.strip():
         payload = task_failure_payload(
             context_id=context_id,
-            error_text="Empty input. Send a text request such as 'Show pods in namespace kagent'.",
+            error_text="Empty input. Example: 'Get pods' or 'List namespaces'.",
         )
         return JSONResponse(
             payload if rest_mode else rpc_result(req_id, payload),
@@ -113,33 +119,23 @@ async def process_message(
 
     try:
         normalized_task = normalize_user_request(user_text)
+    except ValueError as exc:
+        payload = task_failure_payload(
+            context_id=context_id,
+            error_text=str(exc),
+        )
+        return JSONResponse(
+            payload if rest_mode else rpc_result(req_id, payload),
+            status_code=400,
+        )
+
+    try:
         remote_card = await fetch_remote_agent_card()
         remote_result = await send_message_to_remote_agent(
             remote_url=remote_card.get("url", REMOTE_AGENT_BASE),
             task_text=normalized_task,
             context_id=context_id,
         )
-        remote_task = extract_task(remote_result)
-        remote_text = extract_primary_text(remote_task)
-
-        summary = build_summary(
-            normalized_task=normalized_task,
-            remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
-            remote_text=remote_text,
-        )
-
-        task = build_completed_task(
-            context_id=context_id,
-            summary_text=summary,
-            metadata={
-                "normalizedTask": normalized_task,
-                "remoteAgentName": remote_card.get("name"),
-                "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
-            },
-        )
-        payload = {"task": task}
-        return JSONResponse(payload if rest_mode else rpc_result(req_id, payload))
-
     except Exception as exc:
         payload = task_failure_payload(
             context_id=context_id,
@@ -149,6 +145,29 @@ async def process_message(
             payload if rest_mode else rpc_result(req_id, payload),
             status_code=502,
         )
+
+    remote_task = extract_task(remote_result)
+    remote_text = extract_primary_text(remote_task)
+
+    summary = build_summary(
+        normalized_task=normalized_task,
+        remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
+        remote_text=remote_text,
+        remote_result=remote_result,
+    )
+
+    task = build_completed_task(
+        context_id=context_id,
+        summary_text=summary,
+        metadata={
+            "normalizedTask": normalized_task,
+            "remoteAgentName": remote_card.get("name"),
+            "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
+        },
+    )
+
+    payload = {"task": task}
+    return JSONResponse(payload if rest_mode else rpc_result(req_id, payload))
 
 
 async def process_message_stream(
@@ -160,37 +179,53 @@ async def process_message_stream(
     user_text = extract_text_from_message(message)
 
     async def event_generator():
-        # 1) Immediate working event so kagent UI/host sees progress
-        working_event = stream_result(
-            req_id,
-            build_status_update_event(
-                task_id=task_id,
-                context_id=context_id,
-                state="working",
-                final=False,
-                text="Router agent is processing the request.",
-            ),
-        )
-        yield sse_data(working_event)
-
-        if not user_text.strip():
-            failed_event = stream_result(
+        yield sse_data(
+            stream_result(
                 req_id,
                 build_status_update_event(
                     task_id=task_id,
                     context_id=context_id,
-                    state="failed",
-                    final=True,
-                    text="Empty input. Send a text request such as 'Show pods in namespace kagent'.",
+                    state="working",
+                    final=False,
+                    text="Router agent is processing the request.",
                 ),
             )
-            yield sse_data(failed_event)
+        )
+
+        if not user_text.strip():
+            yield sse_data(
+                stream_result(
+                    req_id,
+                    build_status_update_event(
+                        task_id=task_id,
+                        context_id=context_id,
+                        state="failed",
+                        final=True,
+                        text="Empty input. Example: 'Get pods' or 'List namespaces'.",
+                    ),
+                )
+            )
             return
 
         try:
             normalized_task = normalize_user_request(user_text)
+        except ValueError as exc:
+            yield sse_data(
+                stream_result(
+                    req_id,
+                    build_status_update_event(
+                        task_id=task_id,
+                        context_id=context_id,
+                        state="failed",
+                        final=True,
+                        text=str(exc),
+                    ),
+                )
+            )
+            return
 
-            delegated_event = stream_result(
+        yield sse_data(
+            stream_result(
                 req_id,
                 build_status_update_event(
                     task_id=task_id,
@@ -200,8 +235,9 @@ async def process_message_stream(
                     text=f"Delegating normalized task: {normalized_task}",
                 ),
             )
-            yield sse_data(delegated_event)
+        )
 
+        try:
             remote_card = await fetch_remote_agent_card()
             remote_result = await send_message_to_remote_agent(
                 remote_url=remote_card.get("url", REMOTE_AGENT_BASE),
@@ -215,38 +251,41 @@ async def process_message_stream(
                 normalized_task=normalized_task,
                 remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
                 remote_text=remote_text,
+                remote_result=remote_result,
             )
 
-            completed_event = stream_result(
-                req_id,
-                build_status_update_event(
-                    task_id=task_id,
-                    context_id=context_id,
-                    state="completed",
-                    final=True,
-                    text=summary,
-                    metadata={
-                        "normalizedTask": normalized_task,
-                        "remoteAgentName": remote_card.get("name"),
-                        "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
-                    },
-                ),
+            yield sse_data(
+                stream_result(
+                    req_id,
+                    build_status_update_event(
+                        task_id=task_id,
+                        context_id=context_id,
+                        state="completed",
+                        final=True,
+                        text=summary,
+                        metadata={
+                            "normalizedTask": normalized_task,
+                            "remoteAgentName": remote_card.get("name"),
+                            "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
+                        },
+                    ),
+                )
             )
-            yield sse_data(completed_event)
             return
 
         except Exception as exc:
-            failed_event = stream_result(
-                req_id,
-                build_status_update_event(
-                    task_id=task_id,
-                    context_id=context_id,
-                    state="failed",
-                    final=True,
-                    text=f"Remote kagent agent call failed: {exc}",
-                ),
+            yield sse_data(
+                stream_result(
+                    req_id,
+                    build_status_update_event(
+                        task_id=task_id,
+                        context_id=context_id,
+                        state="failed",
+                        final=True,
+                        text=f"Remote kagent agent call failed: {exc}",
+                    ),
+                )
             )
-            yield sse_data(failed_event)
             return
 
     return StreamingResponse(
@@ -341,27 +380,65 @@ async def send_message_to_remote_agent(
 
 
 def normalize_user_request(user_text: str) -> str:
-    lowered = user_text.lower()
+    lowered = user_text.lower().strip()
+    cleaned = re.sub(r"[,:;!?()\[\]{}]+", " ", lowered)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
-    namespace_match = re.search(
-        r"\b(?:namespace|ns)\s+([a-z0-9-]+)\b", lowered)
-    namespace = namespace_match.group(
-        1) if namespace_match else DEFAULT_NAMESPACE
-
-    resource = None
-    for alias, normalized in RESOURCE_ALIASES.items():
-        if re.search(rf"\b{re.escape(alias)}\b", lowered):
-            resource = normalized
-            break
-
+    resource = detect_resource(cleaned)
     if resource is None:
         supported = ", ".join(sorted(set(RESOURCE_ALIASES.values())))
         raise ValueError(
             "Unsupported request. This demo router supports only resource listing for: "
-            f"{supported}. Example: 'Show pods in namespace kagent'."
+            f"{supported}. Examples: 'Get pods', 'Get pods kagent', 'Get services in namespace istio-system'."
         )
 
+    if resource == "namespaces":
+        return "Get the namespaces"
+
+    namespace = detect_namespace(cleaned) or DEFAULT_NAMESPACE
     return f"Get the {resource} in the {namespace} namespace"
+
+
+def detect_resource(text: str) -> Optional[str]:
+    patterns = sorted(RESOURCE_ALIASES.items(),
+                      key=lambda x: len(x[0]), reverse=True)
+    for alias, normalized in patterns:
+        if re.search(rf"(?<![a-z0-9-]){re.escape(alias)}(?![a-z0-9-])", text):
+            return normalized
+    return None
+
+
+def detect_namespace(text: str) -> Optional[str]:
+    patterns = [
+        r"\b(?:namespace|ns)\s+([a-z0-9-]+)\b",
+        r"\bfrom\s+(?:namespace|ns)\s+([a-z0-9-]+)\b",
+        r"\bin\s+(?:namespace|ns)\s+([a-z0-9-]+)\b",
+        r"\bin\s+([a-z0-9-]+)\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+
+    tokens = text.split()
+    if len(tokens) >= 3:
+        last_token = tokens[-1]
+        reserved = {
+            "get", "list", "show",
+            "pod", "pods", "po",
+            "service", "services", "svc",
+            "deployment", "deployments", "deploy",
+            "statefulset", "statefulsets", "sts",
+            "job", "jobs",
+            "cronjob", "cronjobs", "cj",
+            "namespace", "namespaces", "ns",
+            "in", "from", "all",
+        }
+        if re.fullmatch(r"[a-z0-9-]+", last_token) and last_token not in reserved:
+            return last_token
+
+    return None
 
 
 def extract_text_from_message(message: dict[str, Any]) -> str:
@@ -414,11 +491,22 @@ def extract_primary_text(task: dict[str, Any]) -> Optional[str]:
     return None
 
 
-def build_summary(normalized_task: str, remote_endpoint: str, remote_text: Optional[str]) -> str:
+def build_summary(
+    normalized_task: str,
+    remote_endpoint: str,
+    remote_text: Optional[str],
+    remote_result: Optional[dict[str, Any]] = None,
+) -> str:
+    if remote_text:
+        reply_text = remote_text
+    else:
+        reply_text = json.dumps(remote_result, ensure_ascii=False,
+                                indent=2) if remote_result else "[no text returned]"
+
     return (
         f"Router agent normalized the request to: {normalized_task}\n\n"
         f"Remote agent endpoint: {remote_endpoint}\n\n"
-        f"Remote agent reply:\n{remote_text or '[no text artifact returned]'}"
+        f"Remote agent reply:\n{reply_text}"
     )
 
 
@@ -427,7 +515,7 @@ def build_agent_card() -> dict[str, Any]:
         "name": "kagent_a2a_router",
         "description": "A simple A2A router that normalizes Kubernetes listing requests and delegates them to a remote kagent Kubernetes A2A agent.",
         "url": f"{PUBLIC_BASE_URL}/",
-        "version": "0.4.0",
+        "version": "0.6.0",
         "protocolVersion": "0.2.6",
         "capabilities": {
             "streaming": True,
@@ -440,7 +528,7 @@ def build_agent_card() -> dict[str, Any]:
             {
                 "id": "route-k8s-resource-list",
                 "name": "Route Kubernetes resource list tasks",
-                "description": "Converts a simple user request into a normalized Kubernetes listing task and delegates it to a remote kagent A2A agent.",
+                "description": "Converts simple user requests into normalized Kubernetes listing tasks and delegates them to a remote kagent A2A agent.",
                 "tags": ["k8s", "a2a", "router", "kagent"],
                 "examples": SUPPORTED_EXAMPLES,
                 "inputModes": ["text"],
