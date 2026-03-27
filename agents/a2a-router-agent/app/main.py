@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from typing import Any, Optional
@@ -5,9 +6,9 @@ from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
-app = FastAPI(title="Kagent A2A Router Agent", version="0.3.1")
+app = FastAPI(title="Kagent A2A Router Agent", version="0.4.0")
 
 PUBLIC_BASE_URL = os.getenv(
     "PUBLIC_BASE_URL",
@@ -66,7 +67,7 @@ async def get_agent_card_legacy() -> dict[str, Any]:
 
 
 @app.post("/")
-async def handle_jsonrpc(request: Request) -> JSONResponse:
+async def handle_jsonrpc(request: Request):
     body = await request.json()
     req_id = body.get("id", uuid4().hex)
     method = body.get("method")
@@ -75,6 +76,9 @@ async def handle_jsonrpc(request: Request) -> JSONResponse:
 
     if method in {"message/send", "SendMessage"}:
         return await process_message(req_id=req_id, message=message, rest_mode=False)
+
+    if method in {"message/stream", "SendStreamingMessage"}:
+        return await process_message_stream(req_id=req_id, message=message)
 
     return JSONResponse(
         rpc_error(req_id, -32601, f"Unsupported method: {method}"),
@@ -94,8 +98,8 @@ async def process_message(
     message: dict[str, Any],
     rest_mode: bool = False,
 ) -> JSONResponse:
-    user_text = extract_text_from_message(message)
     context_id = message.get("contextId") or uuid4().hex
+    user_text = extract_text_from_message(message)
 
     if not user_text.strip():
         payload = task_failure_payload(
@@ -109,23 +113,33 @@ async def process_message(
 
     try:
         normalized_task = normalize_user_request(user_text)
-    except ValueError as exc:
-        payload = task_failure_payload(
-            context_id=context_id,
-            error_text=str(exc),
-        )
-        return JSONResponse(
-            payload if rest_mode else rpc_result(req_id, payload),
-            status_code=400,
-        )
-
-    try:
         remote_card = await fetch_remote_agent_card()
         remote_result = await send_message_to_remote_agent(
             remote_url=remote_card.get("url", REMOTE_AGENT_BASE),
             task_text=normalized_task,
             context_id=context_id,
         )
+        remote_task = extract_task(remote_result)
+        remote_text = extract_primary_text(remote_task)
+
+        summary = build_summary(
+            normalized_task=normalized_task,
+            remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
+            remote_text=remote_text,
+        )
+
+        task = build_completed_task(
+            context_id=context_id,
+            summary_text=summary,
+            metadata={
+                "normalizedTask": normalized_task,
+                "remoteAgentName": remote_card.get("name"),
+                "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
+            },
+        )
+        payload = {"task": task}
+        return JSONResponse(payload if rest_mode else rpc_result(req_id, payload))
+
     except Exception as exc:
         payload = task_failure_payload(
             context_id=context_id,
@@ -136,27 +150,114 @@ async def process_message(
             status_code=502,
         )
 
-    remote_task = extract_task(remote_result)
-    remote_text = extract_primary_text(remote_task)
 
-    summary = build_summary(
-        normalized_task=normalized_task,
-        remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
-        remote_text=remote_text,
-    )
+async def process_message_stream(
+    req_id: str,
+    message: dict[str, Any],
+) -> StreamingResponse:
+    context_id = message.get("contextId") or uuid4().hex
+    task_id = uuid4().hex
+    user_text = extract_text_from_message(message)
 
-    task = build_completed_task(
-        context_id=context_id,
-        summary_text=summary,
-        metadata={
-            "normalizedTask": normalized_task,
-            "remoteAgentName": remote_card.get("name"),
-            "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
+    async def event_generator():
+        # 1) Immediate working event so kagent UI/host sees progress
+        working_event = stream_result(
+            req_id,
+            build_status_update_event(
+                task_id=task_id,
+                context_id=context_id,
+                state="working",
+                final=False,
+                text="Router agent is processing the request.",
+            ),
+        )
+        yield sse_data(working_event)
+
+        if not user_text.strip():
+            failed_event = stream_result(
+                req_id,
+                build_status_update_event(
+                    task_id=task_id,
+                    context_id=context_id,
+                    state="failed",
+                    final=True,
+                    text="Empty input. Send a text request such as 'Show pods in namespace kagent'.",
+                ),
+            )
+            yield sse_data(failed_event)
+            return
+
+        try:
+            normalized_task = normalize_user_request(user_text)
+
+            delegated_event = stream_result(
+                req_id,
+                build_status_update_event(
+                    task_id=task_id,
+                    context_id=context_id,
+                    state="working",
+                    final=False,
+                    text=f"Delegating normalized task: {normalized_task}",
+                ),
+            )
+            yield sse_data(delegated_event)
+
+            remote_card = await fetch_remote_agent_card()
+            remote_result = await send_message_to_remote_agent(
+                remote_url=remote_card.get("url", REMOTE_AGENT_BASE),
+                task_text=normalized_task,
+                context_id=context_id,
+            )
+            remote_task = extract_task(remote_result)
+            remote_text = extract_primary_text(remote_task)
+
+            summary = build_summary(
+                normalized_task=normalized_task,
+                remote_endpoint=remote_card.get("url", REMOTE_AGENT_BASE),
+                remote_text=remote_text,
+            )
+
+            completed_event = stream_result(
+                req_id,
+                build_status_update_event(
+                    task_id=task_id,
+                    context_id=context_id,
+                    state="completed",
+                    final=True,
+                    text=summary,
+                    metadata={
+                        "normalizedTask": normalized_task,
+                        "remoteAgentName": remote_card.get("name"),
+                        "remoteTaskId": remote_task.get("id") if isinstance(remote_task, dict) else None,
+                    },
+                ),
+            )
+            yield sse_data(completed_event)
+            return
+
+        except Exception as exc:
+            failed_event = stream_result(
+                req_id,
+                build_status_update_event(
+                    task_id=task_id,
+                    context_id=context_id,
+                    state="failed",
+                    final=True,
+                    text=f"Remote kagent agent call failed: {exc}",
+                ),
+            )
+            yield sse_data(failed_event)
+            return
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
-
-    payload = {"task": task}
-    return JSONResponse(payload if rest_mode else rpc_result(req_id, payload))
 
 
 async def fetch_remote_agent_card() -> dict[str, Any]:
@@ -227,9 +328,8 @@ async def send_message_to_remote_agent(
                 result = response.json()
 
                 if isinstance(result, dict) and "error" in result:
-                    err = result["error"]
                     raise RuntimeError(
-                        f"Remote agent returned JSON-RPC error: {err}")
+                        f"Remote agent returned JSON-RPC error: {result['error']}")
 
                 return result
             except Exception as exc:
@@ -327,10 +427,10 @@ def build_agent_card() -> dict[str, Any]:
         "name": "kagent_a2a_router",
         "description": "A simple A2A router that normalizes Kubernetes listing requests and delegates them to a remote kagent Kubernetes A2A agent.",
         "url": f"{PUBLIC_BASE_URL}/",
-        "version": "0.3.1",
+        "version": "0.4.0",
         "protocolVersion": "0.2.6",
         "capabilities": {
-            "streaming": False,
+            "streaming": True,
             "pushNotifications": False,
             "stateTransitionHistory": False,
         },
@@ -400,7 +500,40 @@ def task_failure_payload(context_id: Optional[str], error_text: str) -> dict[str
     return {"task": task}
 
 
+def build_status_update_event(
+    task_id: str,
+    context_id: str,
+    state: str,
+    final: bool,
+    text: str,
+    metadata: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    return {
+        "kind": "status-update",
+        "taskId": task_id,
+        "contextId": context_id,
+        "final": final,
+        "status": {
+            "state": state,
+            "message": {
+                "role": "agent",
+                "messageId": uuid4().hex,
+                "parts": [{"kind": "text", "text": text}],
+            },
+        },
+        "metadata": metadata or {},
+    }
+
+
 def rpc_result(req_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "result": result,
+    }
+
+
+def stream_result(req_id: str, result: dict[str, Any]) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
         "id": req_id,
@@ -414,3 +547,7 @@ def rpc_error(req_id: str, code: int, message: str) -> dict[str, Any]:
         "id": req_id,
         "error": {"code": code, "message": message},
     }
+
+
+def sse_data(payload: dict[str, Any]) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
