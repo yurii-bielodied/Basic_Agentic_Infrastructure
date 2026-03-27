@@ -1,4 +1,4 @@
-name: Build and Push Docker a2a-router-agent Image
+name: Build and Push a2a-router-agent Docker Image
 
 on:
   workflow_dispatch:
