@@ -17,13 +17,24 @@ spec:
       - Prefer concise answers.
       - Do not suggest destructive actions.
     tools:
+    # Flux MCP
     - type: McpServer
       mcpServer:
-        name: kagent-tool-server
+        name: flux-operator-mcp
         kind: RemoteMCPServer
         toolNames:
-        - k8s_get_resources
-        - k8s_get_available_api_resources
+        - get_flux_instance
+        - get_kubernetes_logs
+        - get_kubernetes_metrics
+        - get_kubernetes_resources
+    # K8s Kagent sub-agent
+    - type: Agent
+      agent:
+        name: k8s-agent
+    # Helm Kagent sub-agent
+    - type: Agent
+      agent:
+        name: helm-agent
     a2aConfig:
       skills:
       - id: get-resources-skill

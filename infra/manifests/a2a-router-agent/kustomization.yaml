@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
 - a2a-router-agent.yaml
 - a2a-router-agent-service.yaml
+- kagent-a2a-router-agent.yaml
