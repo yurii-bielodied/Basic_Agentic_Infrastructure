@@ -27,7 +27,7 @@ REMOTE_AGENT_BASE = os.getenv(
     "http://kagent-controller.kagent.svc.cluster.local:8083/api/a2a/kagent/k8s-agent/",
 ).rstrip("/")
 
-HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
+HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT_SECONDS", "180"))
 DEFAULT_NAMESPACE = os.getenv("DEFAULT_NAMESPACE", "default")
 
 RESOURCE_ALIASES = {
