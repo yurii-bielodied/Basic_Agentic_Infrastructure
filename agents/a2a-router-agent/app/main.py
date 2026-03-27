@@ -9,7 +9,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-app = FastAPI(title="Kagent A2A Router Agent", version="0.6.1")
+app = FastAPI(title="Kagent A2A Router Agent", version="0.6.2")
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -24,7 +24,7 @@ PUBLIC_BASE_URL = os.getenv(
 
 REMOTE_AGENT_BASE = os.getenv(
     "KAGENT_REMOTE_AGENT_BASE",
-    "http://kagent-controller.kagent.svc.cluster.local:8083/api/a2a/kagent/k8s-agent",
+    "http://kagent-controller.kagent.svc.cluster.local:8083/api/a2a/kagent/k8s-agent/",
 ).rstrip("/")
 
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
@@ -347,7 +347,10 @@ async def fetch_remote_agent_card() -> dict[str, Any]:
         f"{base}/.well-known/agent-card.json",
     ]
 
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+    async with httpx.AsyncClient(
+        timeout=HTTP_TIMEOUT,
+        follow_redirects=True,
+    ) as client:
         last_error: Optional[Exception] = None
 
         for url in candidates:
@@ -376,7 +379,7 @@ async def send_message_to_remote_agent(
     task_text: str,
     remote_context_id: str,
 ) -> dict[str, Any]:
-    remote_base = remote_url.rstrip("/")
+    remote_base = remote_url.rstrip("/") + "/"
 
     rpc_payload = {
         "jsonrpc": "2.0",
@@ -397,44 +400,31 @@ async def send_message_to_remote_agent(
         },
     }
 
-    candidates = [
-        f"{remote_base}/",
-        remote_base,
-    ]
+    async with httpx.AsyncClient(
+        timeout=HTTP_TIMEOUT,
+        follow_redirects=True,
+    ) as client:
+        logger.info(
+            "Sending remote message url=%s remote_context_id=%s task_text=%r",
+            remote_base,
+            remote_context_id,
+            task_text,
+        )
+        response = await client.post(remote_base, json=rpc_payload)
+        response.raise_for_status()
+        result = response.json()
 
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-        last_error: Optional[Exception] = None
+        logger.info(
+            "Remote response status=%s url=%s",
+            response.status_code,
+            str(response.url),
+        )
 
-        for url in candidates:
-            try:
-                logger.info(
-                    "Sending remote message url=%s remote_context_id=%s task_text=%r",
-                    url,
-                    remote_context_id,
-                    task_text,
-                )
-                response = await client.post(url, json=rpc_payload)
-                response.raise_for_status()
-                result = response.json()
+        if isinstance(result, dict) and "error" in result:
+            raise RuntimeError(
+                f"Remote agent returned JSON-RPC error: {result['error']}")
 
-                logger.info(
-                    "Remote response status=%s url=%s",
-                    response.status_code,
-                    url,
-                )
-
-                if isinstance(result, dict) and "error" in result:
-                    raise RuntimeError(
-                        f"Remote agent returned JSON-RPC error: {result['error']}")
-
-                return result
-            except Exception as exc:
-                logger.warning("Remote invocation failed for %s: %s", url, exc)
-                last_error = exc
-
-        if last_error:
-            raise last_error
-        raise RuntimeError("All remote invocation attempts failed")
+        return result
 
 
 def normalize_user_request(user_text: str) -> str:
@@ -471,7 +461,6 @@ def detect_namespace(text: str) -> Optional[str]:
         r"\bfrom\s+(?:namespace|ns)\s+([a-z0-9-]+)\b",
         r"\bin\s+(?:namespace|ns)\s+([a-z0-9-]+)\b",
         r"\b(?:namespace|ns)\s+([a-z0-9-]+)\b",
-        r"\bin\s+([a-z0-9-]+)\b",
     ]
 
     for pattern in patterns:
@@ -560,8 +549,11 @@ def build_summary(
     if remote_text:
         reply_text = remote_text
     else:
-        reply_text = json.dumps(remote_result, ensure_ascii=False,
-                                indent=2) if remote_result else "[no text returned]"
+        reply_text = (
+            json.dumps(remote_result, ensure_ascii=False, indent=2)
+            if remote_result
+            else "[no text returned]"
+        )
 
     details = []
     if router_context_id:
@@ -586,7 +578,7 @@ def build_agent_card() -> dict[str, Any]:
         "name": "kagent_a2a_router",
         "description": "A simple A2A router that normalizes Kubernetes listing requests and delegates them to a remote kagent Kubernetes A2A agent.",
         "url": f"{PUBLIC_BASE_URL}/",
-        "version": "0.6.1",
+        "version": "0.6.2",
         "protocolVersion": "0.2.6",
         "capabilities": {
             "streaming": True,
