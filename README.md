@@ -1039,3 +1039,11 @@ This repository demonstrates how to combine:
 - **Flux Operator MCP** for AI-driven GitOps automation
 
 into one reproducible local AI platform with declarative infrastructure management.
+
+---
+
+## Additional Documentation
+
+### [vins-questions-ai-infra.md](vins-questions-ai-infra.md)
+
+Research and evaluation guide for the AI infrastructure stack. Covers operational concerns such as handling stuck agents, circuit breaker patterns, monitoring strategies, and advanced troubleshooting scenarios for production-like agentic workflows. Useful for understanding edge cases and designing resilient multi-step agent orchestration.

@@ -14,3 +14,7 @@ kind-cluster-config
 # Terraform lock files
 .terraform.lock.hcl
 .terraform.tfstate.lock.info
+# Backup files
+.bak
+# Log files
+*.log
