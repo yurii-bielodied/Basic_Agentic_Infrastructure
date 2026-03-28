@@ -1047,3 +1047,15 @@ into one reproducible local AI platform with declarative infrastructure manageme
 ### [vins-questions-ai-infra.md](vins-questions-ai-infra.md)
 
 Research and evaluation guide for the AI infrastructure stack. Covers operational concerns such as handling stuck agents, circuit breaker patterns, monitoring strategies, and advanced troubleshooting scenarios for production-like agentic workflows. Useful for understanding edge cases and designing resilient multi-step agent orchestration.
+
+### [vins-questions-ai-infra-assessment.md](vins-questions-ai-infra-assessment.md)
+
+Comprehensive assessment of the Kagent + AgentGateway + FastMCP infrastructure stack from ChatGPT. Covers key architectural decisions and proven patterns, including:
+
+- **Agent Resilience**: Handling stuck agents, timeout strategies, circuit breakers
+- **Model Failover**: Provider switching (OpenAI, Claude, local models), response format handling
+- **Deployment & Versioning**: Agent versioning, blue/green and canary deployment patterns
+- **MCP Framework**: FastMCP as the easiest Python path to MCP, FinOps cost governance
+- **Production Patterns**: Recommended practices for runtime resilience, traffic shaping, and cost management
+
+Each section includes practical verdicts and implementation recommendations for production environments.
