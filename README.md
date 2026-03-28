@@ -251,6 +251,89 @@ This configuration is referenced by all agents in the platform, including the A2
 
 To update the model or provider, modify [infra/manifests/kagent/model-config.yaml](infra/manifests/kagent/model-config.yaml) and commit. Flux will automatically reconcile the changes.
 
+#### Enabling Prompt Enrichment with AgentgatewayBackend and AgentgatewayPolicy
+
+To enable advanced request processing features like **Prompt Enrichment**, use the [infra/manifests/agentgateway/backend-config.yaml](infra/manifests/agentgateway/backend-config.yaml) configuration file. This file defines the AgentgatewayBackend and AgentgatewayPolicy resources that allow prepending system prompts and enriching agent requests.
+
+**What Prompt Enrichment does:**
+
+- Prepend system prompts to all LLM requests
+- Define custom instructions for request parsing and processing
+- Route requests through AgentGateway policies
+- Customize AI behavior at the gateway level
+
+**Prerequisites:**
+
+- For OpenAI backend (optional): OpenAI API key from [platform.openai.com](https://platform.openai.com)
+- Or continue using Ollama as the default LLM provider
+
+**Steps:**
+
+1. **Edit the backend configuration (if using OpenAI):**
+
+If you want to use OpenAI instead of Ollama, set your API key:
+
+```bash
+export OPENAI_API_KEY=<insert your OpenAI API key>
+```
+
+2. **Enable the backend configuration in Kustomization:**
+
+Edit [infra/manifests/agentgateway/kustomization.yaml](infra/manifests/agentgateway/kustomization.yaml) and uncomment the `backend-config.yaml` resource:
+
+```yaml
+resources:
+  - agentgateway.yaml
+  - backend-config.yaml # Uncomment this line to enable Prompt Enrichment
+```
+
+3. **Customize the prompt enrichment policy (optional):**
+
+Edit [infra/manifests/agentgateway/backend-config.yaml](infra/manifests/agentgateway/backend-config.yaml) to modify the system prompt in the AgentgatewayPolicy section:
+
+```yaml
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: prompt-enrichment
+spec:
+  backend:
+    ai:
+      prompt:
+        prepend:
+          - role: system
+            content: "Your custom instruction here" # Modify this line
+```
+
+4. **Commit and push the changes:**
+
+```bash
+git add infra/manifests/agentgateway/
+git commit -m "Enable Prompt Enrichment with AgentgatewayBackend and AgentgatewayPolicy"
+git push
+```
+
+Flux will automatically detect and apply the changes.
+
+5. **Verify the configuration:**
+
+```bash
+kubectl get agentgatewaybackends -n agentgateway-system
+kubectl get agentgatewaypolicies -n agentgateway-system
+```
+
+6. **Test the enriched requests:**
+
+Access the Kagent UI and verify that requests are processed with the enriched prompts:
+
+```bash
+kubectl port-forward -n agentgateway-system svc/agentgateway-proxy 8080:8080
+```
+
+Then open in your browser: `http://localhost:8080`
+
+**Note:** After uncommenting `backend-config.yaml` and committing the changes, Flux will automatically reconcile and apply the configuration. The AgentgatewayBackend will configure the LLM backend (default Ollama or OpenAI if configured), and the AgentgatewayPolicy will apply Prompt Enrichment rules to all incoming requests.
+
 **Features:**
 
 - View distributed traces from agent interactions
