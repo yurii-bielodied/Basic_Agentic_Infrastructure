@@ -991,7 +991,14 @@ kubectl describe remotemcpserver <name> -n kagent
 
 # 3. Check server connectivity
 curl http://localhost:<mcp_server_port>
+
+# 4. As example for flux-operator-mcp
+kubectl port-forward -n flux-system svc/flux-operator-mcp 9090:9090
+
+Set Transport Type to 'Streamable HTTP', URL to 'http://localhost:9090/mcp' and press Connect
 ```
+
+![Inspector UI](img/inspector_ui.jpg)
 
 ---
 
@@ -1043,6 +1050,16 @@ into one reproducible local AI platform with declarative infrastructure manageme
 ---
 
 ## Additional Documentation
+
+### [mcp-research-practical-cases.md](mcp-research-practical-cases.md)
+
+Practical technical and business use cases for Model Context Protocol (MCP). Documents three key patterns:
+
+- **Sampling**: delegating LLM calls through MCP client for model independence and security control
+- **Elicitation**: structured collection of missing user data (JSON Schema validation)
+- **MCP Apps**: interactive UI components in conversation (extensions to base text model)
+
+Includes practical examples for SRE/DevOps: AI-powered incident summarization, Terraform diff explanation, runbook generation from infrastructure analysis.
 
 ### [vins-questions-ai-infra.md](vins-questions-ai-infra.md)
 
