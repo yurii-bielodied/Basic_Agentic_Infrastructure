@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kubernetes Change Assistant</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0b1020;
+        --panel: #151c33;
+        --panel-alt: #1d2745;
+        --border: #33406b;
+        --text: #eef2ff;
+        --muted: #a7b0d6;
+        --accent: #8fb4ff;
+        --success: #89d185;
+        --warn: #f8d06b;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #0b1020 0%, #111932 100%);
+        color: var(--text);
+      }
+
+      .page {
+        padding: 20px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .hero,
+      .card {
+        background: rgba(21, 28, 51, 0.96);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+      }
+
+      .hero h1 {
+        margin: 0 0 8px;
+        font-size: 1.4rem;
+      }
+
+      .hero p,
+      .muted {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      .sidebar,
+      .content {
+        display: grid;
+        gap: 16px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .grid.two {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      input {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(11, 16, 32, 0.8);
+        color: var(--text);
+        padding: 10px 12px;
+      }
+
+      .actions {
+        display: grid;
+        gap: 10px;
+      }
+
+      button {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel-alt);
+        color: var(--text);
+        padding: 10px 12px;
+        cursor: pointer;
+        text-align: left;
+        font-weight: 600;
+      }
+
+      button:hover {
+        border-color: var(--accent);
+      }
+
+      .status {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .badge {
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        padding: 6px 10px;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .badge.success { border-color: rgba(137, 209, 133, 0.5); color: var(--success); }
+      .badge.warn { border-color: rgba(248, 208, 107, 0.5); color: var(--warn); }
+
+      .section-title {
+        margin: 0 0 12px;
+        font-size: 1rem;
+      }
+
+      .kv {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 8px 12px;
+        align-items: start;
+      }
+
+      .kv dt {
+        color: var(--muted);
+      }
+
+      .kv dd {
+        margin: 0;
+        word-break: break-word;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 10px 8px;
+        border-bottom: 1px solid rgba(51, 64, 107, 0.5);
+        font-size: 0.92rem;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      li + li { margin-top: 8px; }
+
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.86rem;
+        color: #d7e3ff;
+      }
+
+      .empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      @media (max-width: 980px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <h1>Kubernetes Change Assistant</h1>
+        <p>
+          Interactive dry-run helper for reviewing a deployment change before rollout.
+          This demo uses mock Kubernetes data so you can show the flow safely.
+        </p>
+      </section>
+
+      <section class="layout">
+        <aside class="sidebar">
+          <div class="card">
+            <h2 class="section-title">Change request</h2>
+            <div class="grid">
+              <label>
+                Cluster
+                <input id="cluster" value="dev-cluster" />
+              </label>
+              <label>
+                Namespace
+                <input id="namespace" value="prod" />
+              </label>
+              <label>
+                Deployment
+                <input id="deployment" value="payments-api" />
+              </label>
+              <label>
+                Current image
+                <input id="currentImage" value="ghcr.io/example/payments-api:1.9.3" />
+              </label>
+              <label>
+                Target image
+                <input id="targetImage" value="ghcr.io/example/payments-api:1.9.4" />
+              </label>
+              <div class="grid two">
+                <label>
+                  Current replicas
+                  <input id="currentReplicas" type="number" min="1" value="3" />
+                </label>
+                <label>
+                  Desired replicas
+                  <input id="desiredReplicas" type="number" min="1" value="3" />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="card actions">
+            <button id="refreshAllBtn">Refresh all context</button>
+            <button id="statusBtn">Load deployment status</button>
+            <button id="podsBtn">Load pod list</button>
+            <button id="eventsBtn">Load recent events</button>
+            <button id="summaryBtn">Generate risk summary</button>
+            <button id="dryRunBtn">Run dry-run preview</button>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Notes</h2>
+            <p class="muted" id="noteText">
+              Waiting for initial tool result...
+            </p>
+          </div>
+        </aside>
+
+        <section class="content">
+          <div class="card">
+            <h2 class="section-title">Deployment status</h2>
+            <div class="status" id="statusBadges"></div>
+            <dl class="kv" id="deploymentStatus"></dl>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Pods</h2>
+            <div id="podsContainer" class="empty">No pods loaded yet.</div>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Recent events</h2>
+            <div id="eventsContainer" class="empty">No events loaded yet.</div>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Change summary</h2>
+            <div id="summaryContainer" class="empty">No summary generated yet.</div>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Dry-run patch preview</h2>
+            <div id="dryRunContainer" class="empty">No dry-run executed yet.</div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/src/mcp-app.ts"></script>
+  </body>
+</html>
